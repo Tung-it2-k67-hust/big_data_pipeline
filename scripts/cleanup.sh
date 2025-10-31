@@ -15,6 +15,7 @@ kubectl delete -f "$K8S_DIR/07-streamlit.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/06-spark-streaming.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/05-kafka-producer.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/04-kibana.yaml" --ignore-not-found=true
+kubectl delete -f "$K8S_DIR/09-cassandra.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/03-elasticsearch.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/02-kafka.yaml" --ignore-not-found=true
 kubectl delete -f "$K8S_DIR/01-zookeeper.yaml" --ignore-not-found=true

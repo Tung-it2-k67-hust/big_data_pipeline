@@ -1,6 +1,6 @@
 """
 Spark Streaming Application for Real-time Data Processing
-Consumes data from Kafka, processes it, and sends to Elasticsearch
+Consumes data from Kafka, processes it, and sends to Elasticsearch and Cassandra
 """
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, window, count, sum as spark_sum, avg
@@ -17,7 +17,8 @@ def create_spark_session(app_name="BigDataPipeline"):
         .appName(app_name) \
         .config("spark.jars.packages", 
                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,"
-                "org.elasticsearch:elasticsearch-spark-30_2.12:8.4.3") \
+                "org.elasticsearch:elasticsearch-spark-30_2.12:8.4.3,"
+                "com.datastax.spark:spark-cassandra-connector_2.12:3.3.0") \
         .config("spark.streaming.stopGracefullyOnShutdown", "true") \
         .config("spark.sql.streaming.checkpointLocation", "/tmp/checkpoint") \
         .getOrCreate()
@@ -123,6 +124,73 @@ def write_to_console(df, query_name="console_output"):
     return query
 
 
+def write_to_cassandra(df, keyspace, table):
+    """Write streaming data to Cassandra"""
+    logger.info(f"Writing to Cassandra keyspace: {keyspace}, table: {table}")
+    
+    def write_batch_to_cassandra(batch_df, batch_id):
+        """Function to write each batch to Cassandra"""
+        import os
+        cassandra_host = os.getenv('CASSANDRA_HOST', 'cassandra')
+        cassandra_port = os.getenv('CASSANDRA_PORT', '9042')
+        
+        batch_df.write \
+            .format("org.apache.spark.sql.cassandra") \
+            .mode("append") \
+            .option("spark.cassandra.connection.host", cassandra_host) \
+            .option("spark.cassandra.connection.port", cassandra_port) \
+            .option("keyspace", keyspace) \
+            .option("table", table) \
+            .save()
+        
+        logger.info(f"Batch {batch_id} written to Cassandra table {keyspace}.{table}")
+    
+    query = df.writeStream \
+        .outputMode("append") \
+        .foreachBatch(write_batch_to_cassandra) \
+        .option("checkpointLocation", f"/tmp/checkpoint/cassandra_{table}") \
+        .start()
+    
+    return query
+
+
+def prepare_cassandra_events(df):
+    """Prepare DataFrame for Cassandra events table"""
+    from pyspark.sql.functions import expr, to_timestamp, date_format
+    
+    cassandra_df = df.select(
+        expr("uuid()").alias("event_id"),
+        col("event_type"),
+        col("user_id").cast("string").alias("user_id"),
+        col("product_id").cast("string").alias("product_id"),
+        col("price").cast("decimal(10,2)").alias("price"),
+        col("quantity"),
+        col("region"),
+        col("device"),
+        to_timestamp(col("timestamp")).alias("timestamp")
+    )
+    
+    return cassandra_df
+
+
+def prepare_cassandra_metrics(agg_df):
+    """Prepare aggregated DataFrame for Cassandra metrics tables"""
+    from pyspark.sql.functions import expr
+    
+    # Prepare metrics by region
+    metrics_by_region = agg_df.select(
+        col("region"),
+        col("window.start").alias("window_start"),
+        col("window.end").alias("window_end"),
+        col("event_type"),
+        col("event_count").cast("bigint").alias("total_events"),
+        col("total_revenue").cast("decimal(15,2)").alias("total_revenue"),
+        col("avg_price").cast("decimal(10,2)").alias("avg_price")
+    )
+    
+    return metrics_by_region
+
+
 def main():
     """Main entry point"""
     import os
@@ -133,6 +201,7 @@ def main():
     es_nodes = os.getenv('ELASTICSEARCH_NODES', 'elasticsearch')
     es_index = os.getenv('ELASTICSEARCH_INDEX', 'events')
     es_agg_index = os.getenv('ELASTICSEARCH_AGG_INDEX', 'events-aggregated')
+    cassandra_keyspace = os.getenv('CASSANDRA_KEYSPACE', 'bigdata_pipeline')
     
     # Create Spark session
     spark = create_spark_session()
@@ -155,10 +224,18 @@ def main():
     # Write aggregated data to Elasticsearch
     query2 = write_to_elasticsearch(agg_df, es_nodes, es_agg_index)
     
+    # Prepare and write to Cassandra
+    cassandra_events = prepare_cassandra_events(processed_df)
+    query4 = write_to_cassandra(cassandra_events, cassandra_keyspace, "events")
+    
+    # Prepare and write aggregated metrics to Cassandra
+    cassandra_metrics = prepare_cassandra_metrics(agg_df)
+    query5 = write_to_cassandra(cassandra_metrics, cassandra_keyspace, "metrics_by_region")
+    
     # Also write to console for monitoring
     query3 = write_to_console(processed_df.limit(10), "raw_data")
     
-    logger.info("Spark Streaming application started")
+    logger.info("Spark Streaming application started with Elasticsearch and Cassandra sinks")
     
     # Wait for termination
     spark.streams.awaitAnyTermination()

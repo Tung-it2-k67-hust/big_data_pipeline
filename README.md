@@ -20,14 +20,9 @@ A complete big data analytics and visualization pipeline deployed on Kubernetes.
 │ Spark Streaming │ ──► Real-time data processing
 └────────┬────────┘
          │
-         ▼
-┌─────────────────┐
-│ Elasticsearch   │ ──► Data storage and indexing
-└────────┬────────┘
+         ├──► Elasticsearch ──► Kibana + Streamlit
          │
-         ├──► Kibana (Visualization)
-         │
-         └──► Streamlit (Custom Dashboard)
+         └──► Cassandra ──► Time-series storage
 ```
 
 ## 📦 Components
@@ -36,6 +31,7 @@ A complete big data analytics and visualization pipeline deployed on Kubernetes.
 - **Kafka + Zookeeper**: Distributed streaming platform for data ingestion
 - **Spark Streaming**: Real-time data processing engine for analytics
 - **Elasticsearch**: Search and analytics engine for data storage
+- **Cassandra**: NoSQL database for time-series data storage with TTL
 - **Kibana**: Data visualization and exploration tool
 - **Streamlit**: Custom Python dashboard for real-time analytics
 - **Prometheus + Grafana**: Monitoring and alerting stack
@@ -58,6 +54,9 @@ big_data_pipeline/
 │   ├── app.py              # Streamlit dashboard application
 │   ├── Dockerfile
 │   └── requirements.txt
+├── cassandra/              # Cassandra database
+│   ├── init-schema.cql     # Database schema initialization
+│   └── README.md
 ├── k8s/                    # Kubernetes manifests
 │   ├── 00-namespace.yaml
 │   ├── 01-zookeeper.yaml
@@ -67,7 +66,8 @@ big_data_pipeline/
 │   ├── 05-kafka-producer.yaml
 │   ├── 06-spark-streaming.yaml
 │   ├── 07-streamlit.yaml
-│   └── 08-monitoring.yaml
+│   ├── 08-monitoring.yaml
+│   └── 09-cassandra.yaml
 ├── monitoring/             # Monitoring configuration
 │   └── prometheus.yml
 ├── scripts/               # Automation scripts
@@ -87,6 +87,7 @@ big_data_pipeline/
 - Kubernetes cluster (Minikube, Kind, or cloud provider)
 - kubectl configured
 - Python 3.9+ (for local development)
+- Shared virtual environment (see VENV_README.md)
 
 ### Local Development with Docker Compose
 
@@ -106,6 +107,7 @@ big_data_pipeline/
    - Streamlit: http://localhost:8501
    - Prometheus: http://localhost:9090
    - Grafana: http://localhost:3000 (admin/admin)
+   - Cassandra CQL: `docker exec -it cassandra cqlsh`
 
 4. **Stop services**
    ```bash
@@ -136,6 +138,7 @@ big_data_pipeline/
    - Streamlit: http://<node-ip>:30851
    - Prometheus: http://<node-ip>:30909
    - Grafana: http://<node-ip>:30300
+   - Cassandra CQL: `kubectl exec -it cassandra-0 -n big-data-pipeline -- cqlsh`
 
 5. **Clean up**
    ```bash
@@ -210,28 +213,31 @@ Default credentials: `admin/admin`
 
 ### Running Components Locally
 
+First, activate the shared virtual environment:
+
+```bash
+# Windows
+.\venv\Scripts\activate.ps1
+
+# Linux/Mac
+source venv/bin/activate
+```
+
 #### Kafka Producer
 ```bash
 cd kafka-producer
-pip install -r requirements.txt
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 python src/producer.py
 ```
 
 #### Spark Streaming
 ```bash
 cd spark-streaming
-pip install -r requirements.txt
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-export ELASTICSEARCH_NODES=localhost
-spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.4.3 src/streaming_app.py
+python src/streaming_app.py
 ```
 
 #### Streamlit Dashboard
 ```bash
 cd streamlit-dashboard
-pip install -r requirements.txt
-export ELASTICSEARCH_HOST=localhost
 streamlit run app.py
 ```
 

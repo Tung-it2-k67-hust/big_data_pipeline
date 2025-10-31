@@ -31,6 +31,13 @@
   - Index: events-aggregated (aggregated metrics)
   - Supports full-text search and analytics
 
+- **Apache Cassandra**: Wide-column NoSQL database
+  - Keyspace: bigdata_pipeline
+  - Tables: events, metrics_by_region, metrics_by_device, product_metrics, user_activity
+  - Optimized for time-series data with TTL (30 days for raw events)
+  - High write throughput for streaming data
+  - Distributed and scalable storage
+
 ### Visualization Layer
 - **Kibana**: Elastic's visualization platform
   - Pre-built dashboards
@@ -57,8 +64,10 @@
 
 ```
 Producer → Kafka → Spark → Elasticsearch → Visualization
-                                         ↓
-                                    Monitoring
+                          ↓
+                      Cassandra
+                          ↓
+                     Monitoring
 ```
 
 ## Deployment Architecture
@@ -72,6 +81,7 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
    - Zookeeper (1 replica)
    - Kafka (1 replica, scalable)
    - Elasticsearch (1 replica, scalable)
+   - Cassandra (1 replica, scalable)
 
 3. **Deployments**:
    - Kafka Producer
@@ -89,6 +99,7 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
    - Zookeeper data
    - Kafka logs
    - Elasticsearch indices
+   - Cassandra data
 
 ## Scalability Considerations
 
@@ -96,6 +107,7 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
 - **Kafka**: Increase replicas and partitions
 - **Spark**: Add more Spark worker nodes
 - **Elasticsearch**: Add more data nodes
+- **Cassandra**: Add more Cassandra nodes to the cluster
 
 ### Vertical Scaling
 - Adjust resource requests/limits in K8s manifests
@@ -111,6 +123,7 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
 - 3+ Zookeeper nodes
 - 3+ Kafka brokers
 - 3+ Elasticsearch nodes
+- 3+ Cassandra nodes
 - 2+ Spark workers
 - Load balancer for external services
 
@@ -123,6 +136,7 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
 ### Production Recommendations
 - Enable Kafka SASL authentication
 - Enable Elasticsearch X-Pack security
+- Enable Cassandra authentication and authorization
 - Use TLS for all connections
 - Implement RBAC in Kubernetes
 - Use secrets management (HashiCorp Vault, etc.)
@@ -146,3 +160,11 @@ Producer → Kafka → Spark → Elasticsearch → Visualization
 - Configure refresh interval
 - Adjust number of shards and replicas
 - Enable index lifecycle management
+
+### Cassandra
+- Tune JVM heap size (8GB-16GB for production)
+- Configure compaction strategy (STCS for time-series data)
+- Adjust `concurrent_reads` and `concurrent_writes`
+- Set appropriate `gc_grace_seconds`
+- Monitor with nodetool and enable JMX metrics
+- Use SizeTieredCompactionStrategy for time-series workloads

@@ -28,6 +28,31 @@ services:
     networks:
       - bigdata-network
 
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    environment:
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=256M
+      - CASSANDRA_CLUSTER_NAME=BigDataPipelineCluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+    ports:
+      - "9042:9042"
+      - "7000:7000"
+      - "7199:7199"
+    networks:
+      - bigdata-network
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+      - ./cassandra/init-schema.cql:/docker-entrypoint-initdb.d/init-schema.cql
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.4.3
     container_name: elasticsearch
@@ -78,12 +103,16 @@ services:
     depends_on:
       - kafka
       - elasticsearch
+      - cassandra
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: data-stream
       ELASTICSEARCH_NODES: elasticsearch
       ELASTICSEARCH_INDEX: events
       ELASTICSEARCH_AGG_INDEX: events-aggregated
+      CASSANDRA_HOST: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_KEYSPACE: bigdata_pipeline
     networks:
       - bigdata-network
 
@@ -129,4 +158,6 @@ networks:
 
 volumes:
   es-data:
+    driver: local
+  cassandra-data:
     driver: local

@@ -29,6 +29,12 @@ spec:
               value: "events"
             - name: ELASTICSEARCH_AGG_INDEX
               value: "events-aggregated"
+            - name: CASSANDRA_HOST
+              value: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local"
+            - name: CASSANDRA_PORT
+              value: "9042"
+            - name: CASSANDRA_KEYSPACE
+              value: "bigdata_pipeline"
           resources:
             requests:
               memory: "1Gi"

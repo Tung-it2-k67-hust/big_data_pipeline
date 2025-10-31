@@ -31,6 +31,12 @@ kubectl apply -f "$K8S_DIR/03-elasticsearch.yaml"
 echo "Waiting for Elasticsearch to be ready..."
 kubectl wait --for=condition=ready pod -l app=elasticsearch -n big-data-pipeline --timeout=300s
 
+echo "Deploying Cassandra..."
+kubectl apply -f "$K8S_DIR/09-cassandra.yaml"
+
+echo "Waiting for Cassandra to be ready..."
+kubectl wait --for=condition=ready pod -l app=cassandra -n big-data-pipeline --timeout=300s
+
 echo "Deploying Kibana..."
 kubectl apply -f "$K8S_DIR/04-kibana.yaml"
 
@@ -53,6 +59,7 @@ echo "  Kibana: http://localhost:30561"
 echo "  Streamlit: http://localhost:30851"
 echo "  Prometheus: http://localhost:30909"
 echo "  Grafana: http://localhost:30300 (admin/admin)"
+echo "  Cassandra CQL: kubectl exec -it cassandra-0 -n big-data-pipeline -- cqlsh"
 echo ""
 echo "Check deployment status:"
 echo "  kubectl get pods -n big-data-pipeline"
