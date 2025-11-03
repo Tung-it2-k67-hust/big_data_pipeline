@@ -8,7 +8,7 @@ Dự án Big Data Pipeline được chia thành 5 vai trò chính, mỗi vai tr�
 - **File**: `docs/README_Data_Ingestion_Engineer.md`
 - **Trách nhiệm**: Thu thập dữ liệu từ CSV vào Kafka
 - **Đầu vào**: `archive/full_dataset.csv`
-- **Đầu ra**: Kafka topic `data-stream`
+- **Đầu ra**: Kafka topic `football-matches`
 
 ### 2. **Data Processing Engineer**
 - **File**: `docs/README_Data_Processing_Engineer.md`
@@ -50,17 +50,43 @@ Project Manager (Review & Sign-off)
 ## 📚 Cách Sử Dụng
 
 1. **Mỗi engineer** đọc file README của mình để hiểu nhiệm vụ
-2. **Làm việc theo thứ tự** từ Ingestion → Processing → Storage → Visualization
-3. **Project Manager** giám sát và điều phối toàn bộ process
-4. **Báo cáo tiến độ** daily/weekly theo hướng dẫn trong từng file
+2. **Đã học lý thuyết** - giờ tập trung CODE THỰC TẾ
+3. **Làm việc PARALLEL** theo kế hoạch tuần trong `QUICK_START_STUDENT.md`
+4. **Project Manager** hỗ trợ coding và debug
+5. **Báo cáo tiến độ** linh hoạt, focus working code
+
+## 📅 **KẾ HOẠCH CHO SINH VIÊN - ĐÃ HỌC LÝ THUYẾT**
+
+### **Tuần 1-2: Code Cơ Bản**
+- **Tất cả**: Code basic functionality, không cần học lý thuyết
+- **Setup**: Environment hoàn chỉnh, basic code running
+- **Goal**: Mỗi người có working code cho component của mình
+
+### **Tuần 3-4: Development Nâng Cao**
+- **Data Ingestion**: Optimize producer, error handling
+- **Data Processing**: Advanced analytics, performance
+- **Data Storage**: Schema optimization, monitoring
+- **Data Visualization**: Rich dashboards, interactivity
+- **Goal**: Features complete, ready for integration
+
+### **Tuần 5-6: Integration & Testing**
+- **Tất cả**: Kết nối components, comprehensive testing
+- **Testing**: End-to-end, load testing, bug fixing
+- **Goal**: System stable, performance optimized
+
+### **Tuần 7-8: Production & Presentation**
+- **Production**: Deploy to production environment
+- **Documentation**: Complete docs, user guides
+- **Presentation**: Demo for teachers, final report
+- **Goal**: Project complete, defend successfully
 
 ## 🎯 Mục Tiêu Chung
 
 - Xây dựng hệ thống Big Data Pipeline hoàn chỉnh
-- Xử lý real-time dữ liệu e-commerce
+- Xử lý real-time dữ liệu **bóng đá** (football matches)
 - Dual storage với Elasticsearch + Cassandra
-- Dashboards cho business intelligence
-- Production-ready với monitoring và scaling
+- Dashboards cho **football analytics**
+- **Quan trọng nhất: CODE WORKING và HỌC ĐƯỢC DEBUGGING!**
 
 ---
 

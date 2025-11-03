@@ -93,6 +93,180 @@ CSV Dataset → Kafka Producer → Kafka → Spark Streaming → Elasticsearch +
 - [ ] Deployment scripts
 - [ ] Final documentation
 
+---
+
+## 📅 **KẾ HOẠCH CHO SINH VIÊN - CHẬM RÃI HỌC HỎI**
+
+### **Tuần 1-2: Học Hỏi & Setup Cơ Bản**
+**Focus**: Học công nghệ mới, setup environment thoải mái
+
+#### **Data Ingestion Engineer (Anh Tài)**
+- **Tuần 1**: Học Kafka concepts, chạy Docker containers
+- **Tuần 2**: Setup development environment, thử import CSV
+- **Goal**: Hiểu Kafka, có thể chạy infrastructure
+
+#### **Data Processing Engineer (Long)**
+- **Tuần 1**: Học Spark Streaming, PySpark basics
+- **Tuần 2**: Setup environment, test connections
+- **Goal**: Hiểu streaming concepts, environment ready
+
+#### **Data Storage Engineer (Quan)**
+- **Tuần 1**: Học Elasticsearch & Cassandra
+- **Tuần 2**: Setup storage systems, basic queries
+- **Goal**: Hiểu storage concepts, systems running
+
+#### **Data Visualization Engineer (Tuấn Đạt)**
+- **Tuần 1**: Học Kibana & Streamlit
+- **Tuần 2**: Setup visualization tools, hello world
+- **Goal**: Hiểu visualization, basic dashboards
+
+#### **Project Manager (Tung)**
+- **Tuần 1-2**: Setup communication, track learning progress
+- **Goal**: Team coordination, support learning
+
+---
+
+### **Tuần 3-4: Development Cơ Bản**
+**Focus**: Code cơ bản, không quá phức tạp
+
+#### **Data Ingestion Engineer (Anh Tài)**
+- **Tuần 3**: Kafka Producer đơn giản
+- **Tuần 4**: Basic data ingestion, error handling
+- **Goal**: Producer gửi được data vào Kafka
+
+#### **Data Processing Engineer (Long)**
+- **Tuần 3**: Spark Streaming job cơ bản
+- **Tuần 4**: Basic aggregations, storage output
+- **Goal**: Processing pipeline hoạt động
+
+#### **Data Storage Engineer (Quan)**
+- **Tuần 3**: Setup indices, keyspaces
+- **Tuần 4**: Basic schemas, monitoring
+- **Goal**: Storage systems optimized
+
+#### **Data Visualization Engineer (Tuấn Đạt)**
+- **Tuần 3**: Kibana visualizations
+- **Tuần 4**: Streamlit dashboard cơ bản
+- **Goal**: Basic dashboards working
+
+#### **Project Manager (Tung)**
+- **Tuần 3-4**: Monitor development, help debugging
+- **Goal**: Team progress tracking
+
+---
+
+### **Tuần 5-6: Integration & Testing**
+**Focus**: Kết nối components, fix bugs
+
+#### **All Engineers**
+- **Tuần 5**: Integration testing từng phần
+- **Tuần 6**: End-to-end testing, bug fixes
+- **Goal**: Pipeline hoạt động từ đầu đến cuối
+
+#### **Project Manager (Tung)**
+- **Tuần 5-6**: Coordinate testing, manage blockers
+- **Goal**: Successful integration
+
+---
+
+### **Tuần 7-8: Production & Presentation**
+**Focus**: Production deployment, báo cáo
+
+#### **All Engineers**
+- **Tuần 7**: Production deployment
+- **Tuần 8**: Documentation, final presentation
+- **Goal**: Project hoàn thành, demo được
+
+#### **Project Manager (Tung)**
+- **Tuần 7-8**: Final coordination, presentation prep
+- **Goal**: Successful project delivery
+
+---
+
+## 🎓 **MINDSET CHO SINH VIÊN**
+
+### **Learning First:**
+- **Không stress deadline**: Học hỏi là quan trọng nhất
+- **Ask questions freely**: Không biết thì hỏi
+- **Trial & error**: Sai cũng được, học từ lỗi
+- **Take breaks**: Mệt thì nghỉ, không ép buộc
+
+### **Team Support:**
+- **Help each other**: Share knowledge, pair programming
+- **Celebrate progress**: Khen nhau khi đạt milestone
+- **Be patient**: Mọi người học với tốc độ khác nhau
+- **Positive attitude**: "We're learning together!"
+
+### **Technical Approach:**
+- **Start small**: Hello world trước, complex sau
+- **Iterate**: Code chạy được rồi tối ưu
+- **Debug together**: Stuck thì hỏi team
+- **Learn from docs**: Documentation là bạn
+
+---
+
+## 🔄 **WEEKLY CHECK-IN (Mỗi Thứ 7) - KHÔNG ÁP LỰC**
+
+### **Format thoải mái:**
+1. **Tuần này học gì hay?** (chia sẻ kiến thức)
+2. **Gặp khó khăn gì?** (technical/learning)
+3. **Tuần sau focus gì?** (plan đơn giản)
+4. **Cần support gì?** (từ team/PM/thầy cô)
+
+### **Không mandatory:**
+- Có thể skip nếu bận
+- Không phạt nếu miss
+- Tập trung encourage và support
+
+---
+
+## ✅ **SUCCESS CRITERIA - THỰC TẾ**
+
+### **Learning Outcomes:**
+- [ ] Học được công nghệ mới
+- [ ] Biết cách debug và fix issues
+- [ ] Hiểu được Big Data concepts
+- [ ] Có thể explain project cho người khác
+
+### **Technical Delivery:**
+- [ ] Pipeline hoạt động end-to-end
+- [ ] Code quality acceptable
+- [ ] Documentation đầy đủ
+- [ ] Demo được cho thầy cô
+
+### **Team Experience:**
+- [ ] Support nhau tốt
+- [ ] Communication open
+- [ ] Fun learning experience
+- [ ] No one left behind
+
+---
+
+## 🚨 **SUPPORT SYSTEM**
+
+### **Khi gặp khó:**
+1. **Tự thử trước**: Google, documentation
+2. **Hỏi team**: Slack/Teams
+3. **PM help**: Tung coordinate
+4. **Thầy cô**: Khi thực sự stuck
+
+### **Time management:**
+1. **Ưu tiên học**: Learning > deadline
+2. **Break down tasks**: Chia nhỏ công việc
+3. **Take breaks**: Học mệt thì nghỉ
+4. **Adjust scope**: Nếu quá khó thì giảm requirement
+
+---
+
+## 🎯 **FINAL GOAL**
+
+**KHÔNG PHẢI** hoàn thành project nhanh nhất  
+**MÀ LÀ** học được nhiều thứ mới, teamwork tốt, và có project để defend!
+
+---
+
+**🎓 TEAM SINH VIÊN: HỌC HỎI CHẬM RÃI, THƯỞNG THỨC QUÁ TRÌNH! 📚🚀**
+
 ## 🔍 Giám Sát Tiến Độ
 
 ### Daily Standup Checklist
