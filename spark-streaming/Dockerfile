@@ -1,4 +1,4 @@
-FROM bitnami/spark:3.3.0
+FROM apache/spark:3.5.0
 
 USER root
 
@@ -15,4 +15,4 @@ ENV ELASTICSEARCH_NODES=elasticsearch
 ENV ELASTICSEARCH_INDEX=events
 ENV ELASTICSEARCH_AGG_INDEX=events-aggregated
 
-CMD ["spark-submit", "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.4.3,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0", "src/streaming_app.py"]
+CMD ["spark-submit", "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0,com.datastax.spark:spark-cassandra-connector_2.12:3.5.0", "src/streaming_app.py"]

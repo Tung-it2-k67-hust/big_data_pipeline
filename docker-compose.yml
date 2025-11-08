@@ -132,7 +132,7 @@ services:
       - bigdata-network
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.48.0
     container_name: prometheus
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -142,7 +142,7 @@ services:
       - bigdata-network
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.2.2
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
