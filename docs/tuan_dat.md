@@ -9,7 +9,7 @@ Bạn chịu trách nhiệm quản lý và tối ưu hóa hệ thống lưu tr�
 ### Nguồn Dữ Liệu
 - **Từ**: Kỹ Sư Data Processing
 - **Elasticsearch**:
-  - Indices: `football-matches` (raw), `football-aggregated` (processed)
+  - Indices: `es` (raw), `football-aggregated` (processed)
   - Endpoint: `elasticsearch:9200`
 - **Cassandra**:
   - Keyspace: `football_analytics`
@@ -88,7 +88,7 @@ kubectl exec -it cassandra-0 -n big-data-pipeline -- nodetool tablestats footbal
 ### Thông Tin Truyền Cho Người Tiếp Theo
 - **Người nhận**: Kỹ Sư Data Visualization
 - **Thông tin cần cung cấp**:
-  - Elasticsearch endpoints và indices (football-matches, football-aggregated)
+  - Elasticsearch endpoints và indices (es, football-aggregated)
   - Cassandra contact points và keyspace (football_analytics)
   - Query patterns và best practices cho football analytics
   - Performance benchmarks

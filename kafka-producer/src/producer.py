@@ -1,95 +1,252 @@
 """
 Kafka Producer for Big Data Pipeline
-Generates and sends sample data to Kafka topics
+Reads football match data from CSV and sends to Kafka topic
 """
 import json
 import time
-import random
-from datetime import datetime
+import os
+import csv
+import logging
+from pathlib import Path
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class DataProducer:
-    """Producer class for generating and sending data to Kafka"""
+class FootballDataProducer:
+    """Producer class for reading CSV and sending football match data to Kafka"""
     
-    def __init__(self, bootstrap_servers='kafka:9092', topic='data-stream'):
+    def __init__(self, bootstrap_servers='kafka:9092', topic='data-stream', csv_file_path=None):
         """
         Initialize Kafka producer
         
         Args:
             bootstrap_servers (str): Kafka bootstrap servers
             topic (str): Kafka topic name
+            csv_file_path (str): Path to CSV file
         """
         self.topic = topic
+        self.csv_file_path = csv_file_path or self._get_csv_path()
+        
+        # Initialize Kafka producer
         self.producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-            key_serializer=lambda k: k.encode('utf-8') if k else None
+            key_serializer=lambda k: k.encode('utf-8') if k else None,
+            # Add retry and timeout configurations
+            retries=3,
+            acks='all',  # Wait for all replicas to acknowledge
+            max_in_flight_requests_per_connection=1,  # Ensure ordering
+            enable_idempotence=True,  # Ensure exactly-once semantics
+            # Wait for metadata to be available
+            metadata_max_age_ms=30000,
+            # Increase timeout for topic creation
+            request_timeout_ms=30000,
+            # Retry on topic not available
+            retry_backoff_ms=1000
         )
         logger.info(f"Kafka Producer initialized for topic: {topic}")
+        logger.info(f"CSV file path: {self.csv_file_path}")
+        # Topic will be auto-created when first message is sent
     
-    def generate_sample_data(self):
-        """Generate sample data for the pipeline"""
-        data = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'user_id': random.randint(1000, 9999),
-            'event_type': random.choice(['click', 'view', 'purchase', 'search']),
-            'product_id': random.randint(100, 999),
-            'price': round(random.uniform(10.0, 1000.0), 2),
-            'quantity': random.randint(1, 5),
-            'session_id': random.randint(10000, 99999),
-            'region': random.choice(['US', 'EU', 'ASIA', 'SA']),
-            'device': random.choice(['mobile', 'desktop', 'tablet'])
+    def _get_csv_path(self):
+        """Get CSV file path from environment or use default"""
+        # First check environment variable
+        env_path = os.getenv('CSV_FILE_PATH')
+        if env_path and os.path.exists(env_path):
+            return os.path.abspath(env_path)
+        
+        # Get the directory of this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up 2 levels: src -> kafka-producer -> project root
+        project_root = os.path.abspath(os.path.join(script_dir, '../..'))
+        
+        # Try multiple possible paths
+        possible_paths = [
+            os.path.join(project_root, 'archive', 'full_dataset.csv'),  # From project root (most likely)
+            os.path.join(os.path.dirname(script_dir), '..', 'archive', 'full_dataset.csv'),  # Alternative
+            '../archive/full_dataset.csv',  # Relative from kafka-producer/src
+            '../../archive/full_dataset.csv',  # From kafka-producer
+            'archive/full_dataset.csv',  # From current working directory
+            '/app/full_dataset.csv',  # Docker path
+        ]
+        
+        for path in possible_paths:
+            # Convert to absolute path
+            if os.path.isabs(path):
+                abs_path = path
+            else:
+                # Try relative to project root first
+                abs_path = os.path.join(project_root, path)
+                if not os.path.exists(abs_path):
+                    # Try relative to current working directory
+                    abs_path = os.path.abspath(path)
+            
+            if os.path.exists(abs_path):
+                logger.info(f"Found CSV file at: {abs_path}")
+                return abs_path
+        
+        # If not found, raise error with helpful message
+        current_dir = os.getcwd()
+        error_msg = (
+            f"CSV file not found.\n"
+            f"Current working directory: {current_dir}\n"
+            f"Script directory: {script_dir}\n"
+            f"Project root: {project_root}\n"
+            f"Expected path: {os.path.join(project_root, 'archive', 'full_dataset.csv')}\n"
+            f"Please set CSV_FILE_PATH environment variable or place file in archive/ directory"
+        )
+        raise FileNotFoundError(error_msg)
+    
+    def _parse_row(self, row):
+        """
+        Parse CSV row and convert to JSON format
+        Handles empty values and converts types appropriately
+        """
+        match_data = {
+            'Season': row.get('Season', '').strip(),
+            'Div': row.get('Div', '').strip(),
+            'Date': row.get('Date', '').strip(),
+            'HomeTeam': row.get('HomeTeam', '').strip(),
+            'AwayTeam': row.get('AwayTeam', '').strip(),
+            'FTHG': self._safe_float(row.get('FTHG')),
+            'FTAG': self._safe_float(row.get('FTAG')),
+            'FTR': row.get('FTR', '').strip(),
+            'HTHG': self._safe_float(row.get('HTHG')),
+            'HTAG': self._safe_float(row.get('HTAG')),
+            'HTR': row.get('HTR', '').strip(),
+            'HS': self._safe_int(row.get('HS')),
+            'AS': self._safe_int(row.get('AS')),
+            'HST': self._safe_int(row.get('HST')),
+            'AST': self._safe_int(row.get('AST')),
+            'HF': self._safe_int(row.get('HF')),
+            'AF': self._safe_int(row.get('AF')),
+            'HC': self._safe_int(row.get('HC')),
+            'AC': self._safe_int(row.get('AC')),
+            'HY': self._safe_int(row.get('HY')),
+            'AY': self._safe_int(row.get('AY')),
+            'HR': self._safe_int(row.get('HR')),
+            'AR': self._safe_int(row.get('AR')),
+            'PSH': self._safe_float(row.get('PSH')),
+            'PSD': self._safe_float(row.get('PSD')),
+            'PSA': self._safe_float(row.get('PSA'))
         }
-        return data
+        
+        # Remove None values to keep JSON clean
+        return {k: v for k, v in match_data.items() if v is not None}
+    
+    def _safe_int(self, value):
+        """Safely convert value to int, return None if empty or invalid"""
+        if not value or value.strip() == '':
+            return None
+        try:
+            # Handle float strings like "1.0"
+            return int(float(value))
+        except (ValueError, TypeError):
+            return None
+    
+    def _safe_float(self, value):
+        """Safely convert value to float, return None if empty or invalid"""
+        if not value or value.strip() == '':
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    
+    def read_csv_file(self):
+        """Read and yield football match records from CSV file"""
+        if not os.path.exists(self.csv_file_path):
+            raise FileNotFoundError(f"CSV file not found: {self.csv_file_path}")
+        
+        logger.info(f"Reading CSV file: {self.csv_file_path}")
+        record_count = 0
+        
+        with open(self.csv_file_path, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            
+            for row in reader:
+                # Skip empty rows
+                if not row.get('HomeTeam') or not row.get('AwayTeam'):
+                    continue
+                
+                match_data = self._parse_row(row)
+                
+                # Only yield if we have at least HomeTeam and AwayTeam
+                if match_data.get('HomeTeam') and match_data.get('AwayTeam'):
+                    record_count += 1
+                    yield match_data
+        
+        logger.info(f"Total records read from CSV: {record_count}")
     
     def send_message(self, key, value):
         """
         Send message to Kafka topic
         
         Args:
-            key (str): Message key
-            value (dict): Message value
+            key (str): Message key (e.g., match_id or team combination)
+            value (dict): Message value (match data)
         """
         try:
             future = self.producer.send(self.topic, key=key, value=value)
             record_metadata = future.get(timeout=10)
-            logger.debug(f"Message sent to {record_metadata.topic} partition {record_metadata.partition}")
+            logger.debug(
+                f"Message sent to topic={record_metadata.topic} "
+                f"partition={record_metadata.partition} "
+                f"offset={record_metadata.offset}"
+            )
             return True
         except KafkaError as e:
             logger.error(f"Failed to send message: {e}")
             return False
     
-    def run(self, interval=1):
+    def run(self, interval=1, loop=False):
         """
-        Run the producer continuously
+        Run the producer
         
         Args:
-            interval (int): Interval between messages in seconds
+            interval (float): Interval between messages in seconds
+            loop (bool): If True, loop through CSV file continuously
         """
-        logger.info("Starting data production...")
+        logger.info("Starting football data production...")
         message_count = 0
         
         try:
             while True:
-                data = self.generate_sample_data()
-                key = f"event_{data['user_id']}"
+                for match_data in self.read_csv_file():
+                    # Create a key from match info for partitioning
+                    key = f"{match_data.get('Date', '')}_{match_data.get('HomeTeam', '')}_{match_data.get('AwayTeam', '')}"
+                    
+                    if self.send_message(key, match_data):
+                        message_count += 1
+                        # Log first message and every 100th message
+                        if message_count == 1:
+                            logger.info(f"✓ First message sent successfully! (Match: {match_data.get('HomeTeam')} vs {match_data.get('AwayTeam')})")
+                        else:
+                            logger.info(f"✓ Sent message {message_count} (Match: {match_data.get('HomeTeam')} vs {match_data.get('AwayTeam')})")
+                       
+                    else:
+                        logger.warning(f"✗ Failed to send message {message_count + 1}")
+                    
+                    time.sleep(interval)
                 
-                if self.send_message(key, data):
-                    message_count += 1
-                    if message_count % 100 == 0:
-                        logger.info(f"Sent {message_count} messages")
-                
-                time.sleep(interval)
+                if not loop:
+                    logger.info(f"✓ Finished sending all {message_count} messages")
+                    break
+                else:
+                    logger.info("Looping back to start of CSV file...")
+                    message_count = 0
+                    
         except KeyboardInterrupt:
             logger.info("Shutting down producer...")
+        except Exception as e:
+            logger.error(f"Error in producer: {e}", exc_info=True)
         finally:
+            self.producer.flush()  # Ensure all messages are sent
             self.producer.close()
+            logger.info("Producer closed")
 
 
 def main():
@@ -99,9 +256,23 @@ def main():
     bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
     topic = os.getenv('KAFKA_TOPIC', 'data-stream')
     interval = float(os.getenv('PRODUCER_INTERVAL', '1'))
+    csv_file_path = os.getenv('CSV_FILE_PATH')
+    loop = os.getenv('PRODUCER_LOOP', 'false').lower() == 'true'
     
-    producer = DataProducer(bootstrap_servers=bootstrap_servers, topic=topic)
-    producer.run(interval=interval)
+    try:
+        producer = FootballDataProducer(
+            bootstrap_servers=bootstrap_servers,
+            topic=topic,
+            csv_file_path=csv_file_path
+        )
+        producer.run(interval=interval, loop=loop)
+    except FileNotFoundError as e:
+        logger.error(f"CSV file not found: {e}")
+        logger.error("Please set CSV_FILE_PATH environment variable or place file in archive/ directory")
+        exit(1)
+    except Exception as e:
+        logger.error(f"Failed to start producer: {e}", exc_info=True)
+        exit(1)
 
 
 if __name__ == '__main__':

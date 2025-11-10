@@ -22,9 +22,17 @@ spec:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka:9092"
             - name: KAFKA_TOPIC
-              value: "data-stream"
+              value: "data-stream"  # Changed from data-stream
             - name: PRODUCER_INTERVAL
               value: "1"
+            - name: CSV_FILE_PATH
+              value: "/app/data/full_dataset.csv"
+            - name: PRODUCER_LOOP
+              value: "false"
+          volumeMounts:
+            - name: csv-data
+              mountPath: /app/data
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -32,3 +40,20 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+      volumes:
+        - name: csv-data
+          configMap:
+            name: football-csv-data
+          # Alternative: use PersistentVolumeClaim if CSV is large
+          # Or use initContainer to download CSV
+---
+# ConfigMap for CSV file (for small files)
+# For large files, consider using PersistentVolume or initContainer
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: football-csv-data
+  namespace: big-data-pipeline
+# Note: For large CSV files, you may need to use a different approach
+# such as mounting from PersistentVolume or using an initContainer
+# to download the file from a storage service

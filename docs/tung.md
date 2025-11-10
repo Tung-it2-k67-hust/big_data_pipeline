@@ -42,7 +42,7 @@ CSV Dataset → Kafka Producer → Kafka → Spark Streaming → Elasticsearch +
 
 ### 1. Data Ingestion Engineer
 - **Nhiệm vụ**: Thu thập dữ liệu từ `archive/full_dataset.csv` vào Kafka
-- **Đầu ra**: Kafka topic `football-matches` với JSON messages
+- **Đầu ra**: Kafka topic `es` với JSON messages
 - **Thời gian**: 2-3 ngày
 
 ### 2. Data Processing Engineer

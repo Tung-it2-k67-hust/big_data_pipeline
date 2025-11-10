@@ -9,7 +9,7 @@ Bạn chịu trách nhiệm tạo dashboards và visualizations để hiển th�
 ### Nguồn Dữ Liệu
 - **Từ**: Kỹ Sư Data Storage
 - **Elasticsearch**:
-  - Indices: `football-matches`, `football-aggregated`
+  - Indices: `es`, `football-aggregated`
   - Endpoint: `elasticsearch:9200`
 - **Cassandra**:
   - Keyspace: `football_analytics`

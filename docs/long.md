@@ -8,7 +8,7 @@ Bạn chịu trách nhiệm xử lý dữ liệu real-time từ Kafka và chuy�
 
 ### Nguồn Dữ Liệu
 - **Từ**: Kỹ Sư Data Ingestion
-- **Kafka Topic**: `football-matches`
+- **Kafka Topic**: `data-stream`
 - **Schema dữ liệu**:
 ```json
 {
@@ -97,7 +97,7 @@ spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,org.ela
 ### Thông Tin Truyền Cho Người Tiếp Theo
 - **Người nhận**: Kỹ Sư Data Storage + Kỹ Sư Data Visualization
 - **Thông tin cần cung cấp**:
-  - Elasticsearch indices: `football-matches`, `football-aggregated`
+  - Elasticsearch indices: `es`, `football-aggregated`
   - Cassandra keyspace: `football_analytics`
   - Schema của các tables (matches, team stats, league performance)
   - Sample queries để test

@@ -39,8 +39,8 @@ cd kafka-producer
 ### 2. Cấu Hình Kafka Producer
 - **File chính**: `src/producer.py`
 - **Cấu hình kết nối**:
-  - Kafka Bootstrap Servers: `kafka:9092` (Docker) hoặc `localhost:9092` (local)
-  - Topic: `football-matches`
+  - Kafka Bootstrap Servers: `kafka:9092` (Docker) hoặc `localhost:29092` (local)
+  - Topic: `data-stream`
   - Tốc độ gửi: 1 trận đấu/giây (có thể cấu hình)
 
 ### 3. Chạy Data Producer
@@ -57,14 +57,14 @@ python src/producer.py
 # Kiểm tra Kafka topic
 kubectl exec -it kafka-0 -n big-data-pipeline -- kafka-console-consumer \
   --bootstrap-server localhost:9092 \
-  --topic football-matches \
+  --topic data-stream \
   --from-beginning
 ```
 
 ## 📤 Đầu Ra Của Bạn
 
 ### Dữ Liệu Gửi Đến
-- **Đích đến**: Kafka topic `football-matches`
+- **Đích đến**: Kafka topic `data-stream`
 - **Định dạng**: JSON messages
 - **Tốc độ**: Real-time streaming (1 trận đấu/second)
 - **Độ tin cậy**: At-least-once delivery
@@ -72,7 +72,7 @@ kubectl exec -it kafka-0 -n big-data-pipeline -- kafka-console-consumer \
 ### Thông Tin Truyền Cho Người Tiếp Theo
 - **Người nhận**: Kỹ Sư Data Processing
 - **Thông tin cần cung cấp**:
-  - Kafka topic name: `football-matches`
+  - Kafka topic name: `data-stream`
   - Schema của dữ liệu JSON (football match data)
   - Tốc độ streaming hiện tại
   - Sample messages để test

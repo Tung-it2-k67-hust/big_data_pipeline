@@ -8,7 +8,7 @@ Dự án Big Data Pipeline được chia thành 5 vai trò chính, mỗi vai tr�
 - **File**: `docs/README_Data_Ingestion_Engineer.md`
 - **Trách nhiệm**: Thu thập dữ liệu từ CSV vào Kafka
 - **Đầu vào**: `archive/full_dataset.csv`
-- **Đầu ra**: Kafka topic `football-matches`
+- **Đầu ra**: Kafka topic `es`
 
 ### 2. **Data Processing Engineer**
 - **File**: `docs/README_Data_Processing_Engineer.md`

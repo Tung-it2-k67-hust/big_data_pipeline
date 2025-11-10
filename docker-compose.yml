@@ -19,14 +19,19 @@ services:
       - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://0.0.0.0:29092 
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092 # Địa chỉ này cần đúng
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     networks:
       - bigdata-network
+      
 
   cassandra:
     image: cassandra:4.1
@@ -92,8 +97,13 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: data-stream
       PRODUCER_INTERVAL: 1
+      CSV_FILE_PATH: /app/full_dataset.csv
+      PRODUCER_LOOP: "false"
+    volumes:
+      - ./archive/full_dataset.csv:/app/full_dataset.csv:ro
     networks:
       - bigdata-network
+    restart: unless-stopped
 
   spark-streaming:
     build:

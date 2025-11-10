@@ -17,7 +17,7 @@
 - [ ] Chạy `docker-compose up` để start Kafka cluster
 - [ ] Tạo Kafka Producer script đơn giản (`kafka-producer/src/producer.py`)
 - [ ] Implement CSV reader cho `archive/full_dataset.csv`
-- [ ] Send sample data (5-10 records) vào Kafka topic `football-matches`
+- [ ] Send sample data (5-10 records) vào Kafka topic `es`
 - [ ] Test với Kafka console consumer
 
 #### **Tuần 2: Producer Hoàn Chỉnh**
@@ -42,7 +42,7 @@
 - [ ] Clone project và setup Python venv
 - [ ] Cài đặt PySpark dependencies
 - [ ] Tạo Spark Streaming job template
-- [ ] Connect với Kafka topic `football-matches`
+- [ ] Connect với Kafka topic `es`
 - [ ] Consume và print messages từ Kafka
 - [ ] Test connection với Elasticsearch và Cassandra
 
