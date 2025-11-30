@@ -2,27 +2,45 @@
 # =============================================================================
 # Script: gke-setup-cluster.sh
 # Mô tả: Tạo GKE cluster từ đầu
-# Cách dùng: ./scripts/gke-setup-cluster.sh PROJECT_ID [REGION] [CLUSTER_NAME]
+# Cách dùng: ./scripts/gke-setup-cluster.sh PROJECT_ID [REGION] [CLUSTER_NAME] [--yes]
+# Flags:
+#   --yes : Tự động trả lời yes cho tất cả prompts (cho CI/CD)
 # =============================================================================
 
 set -e
 
-# Kiểm tra tham số
-if [ -z "$1" ]; then
+# Kiểm tra flag --yes
+AUTO_YES=false
+for arg in "$@"; do
+    if [[ "$arg" == "--yes" ]] || [[ "$arg" == "-y" ]]; then
+        AUTO_YES=true
+    fi
+done
+
+# Kiểm tra tham số (bỏ qua flags)
+POSITIONAL_ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" != "--yes" ]] && [[ "$arg" != "-y" ]]; then
+        POSITIONAL_ARGS+=("$arg")
+    fi
+done
+
+if [ ${#POSITIONAL_ARGS[@]} -eq 0 ]; then
     echo "❌ Lỗi: Thiếu GCP Project ID"
     echo ""
     echo "Cách dùng:"
-    echo "  ./scripts/gke-setup-cluster.sh PROJECT_ID [REGION] [CLUSTER_NAME]"
+    echo "  ./scripts/gke-setup-cluster.sh PROJECT_ID [REGION] [CLUSTER_NAME] [--yes]"
     echo ""
     echo "Ví dụ:"
     echo "  ./scripts/gke-setup-cluster.sh my-project-123"
     echo "  ./scripts/gke-setup-cluster.sh my-project-123 asia-southeast1 my-cluster"
+    echo "  ./scripts/gke-setup-cluster.sh my-project-123 asia-southeast1 my-cluster --yes"
     exit 1
 fi
 
-PROJECT_ID="$1"
-REGION="${2:-asia-southeast1}"          # Default: Singapore
-CLUSTER_NAME="${3:-bigdata-cluster}"    # Default: bigdata-cluster
+PROJECT_ID="${POSITIONAL_ARGS[0]}"
+REGION="${POSITIONAL_ARGS[1]:-asia-southeast1}"          # Default: Singapore
+CLUSTER_NAME="${POSITIONAL_ARGS[2]:-bigdata-cluster}"    # Default: bigdata-cluster
 
 echo "=============================================="
 echo "🚀 Thiết lập GKE Cluster"
@@ -66,10 +84,14 @@ if [ -z "$BILLING_ACCOUNT" ]; then
     echo "⚠️  CẢNH BÁO: Project chưa được liên kết với billing account"
     echo "   Vào https://console.cloud.google.com/billing để liên kết"
     echo ""
-    read -p "Bạn đã liên kết billing account chưa? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    if [ "$AUTO_YES" = true ]; then
+        echo "   (Tiếp tục tự động do flag --yes)"
+    else
+        read -p "Bạn đã liên kết billing account chưa? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
 else
     echo "✅ Billing account đã được liên kết"

@@ -2,7 +2,9 @@
 # =============================================================================
 # Script: gke-cleanup.sh
 # Mô tả: Xóa toàn bộ resources của Big Data Pipeline trên GKE
-# Cách dùng: ./scripts/gke-cleanup.sh
+# Cách dùng: ./scripts/gke-cleanup.sh [-f|--force]
+# Flags:
+#   -f, --force : Bỏ qua xác nhận và xóa ngay lập tức
 # =============================================================================
 
 set -e
@@ -18,11 +20,17 @@ echo ""
 echo "⚠️  CẢNH BÁO: Lệnh này sẽ xóa TẤT CẢ resources trong namespace big-data-pipeline"
 echo "   Bao gồm: Pods, Services, StatefulSets, Deployments, PVCs, ..."
 echo ""
-read -p "Bạn có chắc chắn muốn tiếp tục? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "❌ Đã hủy"
-    exit 1
+
+# Hỗ trợ non-interactive mode với flag -f/--force
+if [[ "$1" == "-f" ]] || [[ "$1" == "--force" ]]; then
+    echo "   (Tiếp tục tự động do flag -f/--force)"
+else
+    read -p "Bạn có chắc chắn muốn tiếp tục? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Đã hủy"
+        exit 1
+    fi
 fi
 
 echo ""

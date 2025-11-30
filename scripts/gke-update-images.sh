@@ -32,6 +32,12 @@ echo "Project ID: $PROJECT_ID"
 echo "Thư mục: $GKE_DIR"
 echo ""
 
+# Tạo backup trước khi thay đổi
+echo "📁 Tạo backup files..."
+cp "$GKE_DIR/05-kafka-producer.yaml" "$GKE_DIR/05-kafka-producer.yaml.bak"
+cp "$GKE_DIR/06-spark-streaming.yaml" "$GKE_DIR/06-spark-streaming.yaml.bak"
+cp "$GKE_DIR/07-streamlit.yaml" "$GKE_DIR/07-streamlit.yaml.bak"
+
 # Cập nhật các file YAML
 echo "📝 Cập nhật 05-kafka-producer.yaml..."
 sed -i "s|gcr.io/YOUR_PROJECT_ID/|gcr.io/$PROJECT_ID/|g" "$GKE_DIR/05-kafka-producer.yaml"
@@ -51,6 +57,9 @@ echo "Các file đã được cập nhật:"
 echo "  - $GKE_DIR/05-kafka-producer.yaml"
 echo "  - $GKE_DIR/06-spark-streaming.yaml"
 echo "  - $GKE_DIR/07-streamlit.yaml"
+echo ""
+echo "📁 Backup files đã được tạo (*.bak) để khôi phục nếu cần"
+echo "   Để khôi phục: mv file.yaml.bak file.yaml"
 echo ""
 echo "📌 Bước tiếp theo: Deploy lên GKE"
 echo "  Chạy: ./scripts/gke-deploy.sh"

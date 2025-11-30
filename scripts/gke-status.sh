@@ -41,88 +41,47 @@ echo "------------------"
 kubectl top pods -n $NAMESPACE 2>/dev/null || echo "(Metrics server chưa được cài đặt)"
 echo ""
 
+# Function để kiểm tra health của service
+check_service_health() {
+    local app_label="$1"
+    local display_name="$2"
+    local icon="$3"
+    
+    echo ""
+    echo "$icon $display_name:"
+    
+    # Lấy pod đầu tiên với label
+    local POD_NAME=$(kubectl get pod -n $NAMESPACE -l app=$app_label -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    
+    if [ -n "$POD_NAME" ]; then
+        local STATUS=$(kubectl get pod $POD_NAME -n $NAMESPACE -o jsonpath='{.status.phase}')
+        local READY=$(kubectl get pod $POD_NAME -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+        echo "   Pod: $POD_NAME | Status: $STATUS | Ready: $READY"
+    else
+        echo "   ❌ Không tìm thấy pod"
+    fi
+}
+
 # Kiểm tra health của từng service
 echo "=============================================="
 echo "🏥 Health Check từng Service"
 echo "=============================================="
 
-# Zookeeper
-echo ""
-echo "🐘 Zookeeper:"
-ZOOKEEPER_POD=$(kubectl get pod -n $NAMESPACE -l app=zookeeper -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$ZOOKEEPER_POD" ]; then
-    STATUS=$(kubectl get pod $ZOOKEEPER_POD -n $NAMESPACE -o jsonpath='{.status.phase}')
-    READY=$(kubectl get pod $ZOOKEEPER_POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    echo "   Pod: $ZOOKEEPER_POD | Status: $STATUS | Ready: $READY"
-else
-    echo "   ❌ Không tìm thấy pod"
-fi
+# Infrastructure Services
+check_service_health "zookeeper" "Zookeeper" "🐘"
+check_service_health "kafka" "Kafka" "📨"
+check_service_health "elasticsearch" "Elasticsearch" "🔍"
+check_service_health "cassandra" "Cassandra" "💾"
 
-# Kafka
-echo ""
-echo "📨 Kafka:"
-KAFKA_POD=$(kubectl get pod -n $NAMESPACE -l app=kafka -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$KAFKA_POD" ]; then
-    STATUS=$(kubectl get pod $KAFKA_POD -n $NAMESPACE -o jsonpath='{.status.phase}')
-    READY=$(kubectl get pod $KAFKA_POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    echo "   Pod: $KAFKA_POD | Status: $STATUS | Ready: $READY"
-else
-    echo "   ❌ Không tìm thấy pod"
-fi
+# Application Services
+check_service_health "kafka-producer" "Kafka Producer" "📤"
+check_service_health "spark-streaming" "Spark Streaming" "⚡"
+check_service_health "streamlit" "Streamlit" "📈"
+check_service_health "kibana" "Kibana" "📊"
 
-# Elasticsearch
-echo ""
-echo "🔍 Elasticsearch:"
-ES_POD=$(kubectl get pod -n $NAMESPACE -l app=elasticsearch -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$ES_POD" ]; then
-    STATUS=$(kubectl get pod $ES_POD -n $NAMESPACE -o jsonpath='{.status.phase}')
-    READY=$(kubectl get pod $ES_POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    echo "   Pod: $ES_POD | Status: $STATUS | Ready: $READY"
-else
-    echo "   ❌ Không tìm thấy pod"
-fi
-
-# Cassandra
-echo ""
-echo "💾 Cassandra:"
-CASS_POD=$(kubectl get pod -n $NAMESPACE -l app=cassandra -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$CASS_POD" ]; then
-    STATUS=$(kubectl get pod $CASS_POD -n $NAMESPACE -o jsonpath='{.status.phase}')
-    READY=$(kubectl get pod $CASS_POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    echo "   Pod: $CASS_POD | Status: $STATUS | Ready: $READY"
-else
-    echo "   ❌ Không tìm thấy pod"
-fi
-
-# Kafka Producer
-echo ""
-echo "📤 Kafka Producer:"
-kubectl get pods -n $NAMESPACE -l app=kafka-producer -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
-
-# Spark Streaming
-echo ""
-echo "⚡ Spark Streaming:"
-kubectl get pods -n $NAMESPACE -l app=spark-streaming -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
-
-# Streamlit
-echo ""
-echo "📈 Streamlit:"
-kubectl get pods -n $NAMESPACE -l app=streamlit -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
-
-# Kibana
-echo ""
-echo "📊 Kibana:"
-kubectl get pods -n $NAMESPACE -l app=kibana -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
-
-# Prometheus
-echo ""
-echo "📉 Prometheus:"
-kubectl get pods -n $NAMESPACE -l app=prometheus -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
-
-# Grafana
-echo ""
-echo "📉 Grafana:"
-kubectl get pods -n $NAMESPACE -l app=grafana -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=="Ready")].status' 2>/dev/null || echo "   ❌ Không tìm thấy"
+# Monitoring Services
+check_service_health "prometheus" "Prometheus" "📉"
+check_service_health "grafana" "Grafana" "📉"
 
 echo ""
 echo "=============================================="

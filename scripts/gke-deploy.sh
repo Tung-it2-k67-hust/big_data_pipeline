@@ -2,7 +2,9 @@
 # =============================================================================
 # Script: gke-deploy.sh
 # Mô tả: Deploy toàn bộ Big Data Pipeline lên GKE theo thứ tự đúng
-# Cách dùng: ./scripts/gke-deploy.sh
+# Cách dùng: ./scripts/gke-deploy.sh [-y|--yes]
+# Flags:
+#   -y, --yes : Tự động trả lời yes cho tất cả prompts
 # =============================================================================
 
 set -e
@@ -30,14 +32,27 @@ kubectl cluster-info | head -1
 echo ""
 
 # Kiểm tra image paths đã được cập nhật chưa
-if grep -q "YOUR_PROJECT_ID" "$GKE_DIR/05-kafka-producer.yaml"; then
+PLACEHOLDER_FOUND=false
+for file in "$GKE_DIR/05-kafka-producer.yaml" "$GKE_DIR/06-spark-streaming.yaml" "$GKE_DIR/07-streamlit.yaml"; do
+    if grep -q "YOUR_PROJECT_ID" "$file"; then
+        PLACEHOLDER_FOUND=true
+        break
+    fi
+done
+
+if [ "$PLACEHOLDER_FOUND" = true ]; then
     echo "⚠️  CẢNH BÁO: Image paths chưa được cập nhật!"
     echo "   Chạy: ./scripts/gke-update-images.sh YOUR_PROJECT_ID"
     echo ""
-    read -p "Bạn có muốn tiếp tục không? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    # Hỗ trợ non-interactive mode với flag -y
+    if [[ "$1" == "-y" ]] || [[ "$1" == "--yes" ]]; then
+        echo "   (Tiếp tục tự động do flag -y/--yes)"
+    else
+        read -p "Bạn có muốn tiếp tục không? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
 fi
 
