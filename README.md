@@ -114,7 +114,7 @@ big_data_pipeline/
    docker-compose down
    ```
 
-### Kubernetes Deployment
+### Kubernetes Deployment (Local - Minikube/Kind)
 
 1. **Build Docker images**
    ```bash
@@ -143,6 +143,42 @@ big_data_pipeline/
 5. **Clean up**
    ```bash
    ./scripts/cleanup.sh
+   ```
+
+### Google Kubernetes Engine (GKE) Deployment ☁️
+
+Để deploy lên Google Cloud Platform (GKE), xem hướng dẫn chi tiết: **[📖 GKE_DEPLOYMENT_GUIDE.md](docs/GKE_DEPLOYMENT_GUIDE.md)**
+
+**Quick Start cho GKE:**
+
+1. **Thiết lập GKE cluster** (nếu chưa có)
+   ```bash
+   ./scripts/gke-setup-cluster.sh YOUR_PROJECT_ID
+   ```
+
+2. **Build và push images lên Google Container Registry**
+   ```bash
+   ./scripts/gke-build-push.sh YOUR_PROJECT_ID
+   ```
+
+3. **Cập nhật image paths**
+   ```bash
+   ./scripts/gke-update-images.sh YOUR_PROJECT_ID
+   ```
+
+4. **Deploy lên GKE**
+   ```bash
+   ./scripts/gke-deploy.sh
+   ```
+
+5. **Kiểm tra trạng thái**
+   ```bash
+   ./scripts/gke-status.sh
+   ```
+
+6. **Dọn dẹp**
+   ```bash
+   ./scripts/gke-cleanup.sh
    ```
 
 ## 🔧 Configuration
