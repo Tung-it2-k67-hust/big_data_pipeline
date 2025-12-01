@@ -13,16 +13,24 @@ spec:
     metadata:
       labels:
         app: kafka-producer
-    spec:
+      initContainers:
+        - name: download-csv
+          image: google/cloud-sdk:alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - gsutil cp gs://big-data-pipeline-data-robust-magpie-479807-f1/data/full_dataset.csv /data/full_dataset.csv
+          volumeMounts:
+            - name: csv-data
+              mountPath: /data
       containers:
         - name: kafka-producer
-          image: kafka-producer:latest
-          imagePullPolicy: IfNotPresent
+          image: asia-northeast1-docker.pkg.dev/robust-magpie-479807-f1/my-repo/kafka-producer:latest
+          imagePullPolicy: Always
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka:9092"
+              value: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
             - name: KAFKA_TOPIC
-              value: "data-stream"  # Changed from data-stream
+              value: "data-stream"
             - name: PRODUCER_INTERVAL
               value: "1"
             - name: CSV_FILE_PATH
@@ -42,10 +50,7 @@ spec:
               cpu: "500m"
       volumes:
         - name: csv-data
-          configMap:
-            name: football-csv-data
-          # Alternative: use PersistentVolumeClaim if CSV is large
-          # Or use initContainer to download CSV
+          emptyDir: {}
 ---
 # ConfigMap for CSV file (for small files)
 # For large files, consider using PersistentVolume or initContainer

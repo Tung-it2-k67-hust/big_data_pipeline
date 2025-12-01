@@ -1,0 +1,7 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-northeast1-docker.pkg.dev/$_PROJECT_ID/my-repo/spark-streaming:latest', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-northeast1-docker.pkg.dev/$_PROJECT_ID/my-repo/spark-streaming:latest']
+images:
+  - 'asia-northeast1-docker.pkg.dev/$_PROJECT_ID/my-repo/spark-streaming:latest'

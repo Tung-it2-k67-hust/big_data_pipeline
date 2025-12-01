@@ -5,11 +5,10 @@ metadata:
   name: streamlit
   namespace: big-data-pipeline
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
     - port: 8501
       targetPort: 8501
-      nodePort: 30851
       name: http
   selector:
     app: streamlit
@@ -31,8 +30,8 @@ spec:
     spec:
       containers:
         - name: streamlit
-          image: streamlit-dashboard:latest
-          imagePullPolicy: IfNotPresent
+          image: asia-northeast1-docker.pkg.dev/robust-magpie-479807-f1/my-repo/streamlit-dashboard:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8501
               name: http

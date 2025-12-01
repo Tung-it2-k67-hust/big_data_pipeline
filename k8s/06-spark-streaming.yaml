@@ -16,11 +16,11 @@ spec:
     spec:
       containers:
         - name: spark-streaming
-          image: spark-streaming:latest
-          imagePullPolicy: IfNotPresent
+          image: asia-northeast1-docker.pkg.dev/robust-magpie-479807-f1/my-repo/spark-streaming:latest
+          imagePullPolicy: Always
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka:9092"
+              value: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
             - name: KAFKA_TOPIC
               value: "data-stream"
             - name: ELASTICSEARCH_NODES

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class FootballDataProducer:
     """Producer class for reading CSV and sending football match data to Kafka"""
     
-    def __init__(self, bootstrap_servers='kafka:9092', topic='data-stream', csv_file_path=None):
+    def __init__(self, bootstrap_servers=None, topic='data-stream', csv_file_path=None):
         """
         Initialize Kafka producer
         
@@ -29,6 +29,13 @@ class FootballDataProducer:
         """
         self.topic = topic
         self.csv_file_path = csv_file_path or self._get_csv_path()
+        
+        # Get bootstrap servers from env or use default
+        if bootstrap_servers is None:
+            kafka_ip = os.getenv('KAFKA_EXTERNAL_IP', 'localhost')
+            bootstrap_servers = f'{kafka_ip}:9094'
+        
+        logger.info(f"Connecting to Kafka at: {bootstrap_servers}")
         
         # Initialize Kafka producer
         self.producer = KafkaProducer(
