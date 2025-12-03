@@ -1,0 +1,69 @@
+# Streamlit Dashboard cho GKE
+# Dashboard tùy chỉnh để hiển thị dữ liệu real-time
+#
+# ⚠️ LƯU Ý: Thay YOUR_PROJECT_ID bằng GCP Project ID của bạn
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamlit
+  namespace: big-data-pipeline
+  labels:
+    app: streamlit
+spec:
+  # LoadBalancer để có External IP
+  type: LoadBalancer
+  ports:
+    - port: 8501
+      targetPort: 8501
+      name: http
+  selector:
+    app: streamlit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit
+  namespace: big-data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: streamlit
+  template:
+    metadata:
+      labels:
+        app: streamlit
+    spec:
+      containers:
+        - name: streamlit
+          # Thay YOUR_PROJECT_ID bằng project ID của bạn
+          image: gcr.io/YOUR_PROJECT_ID/streamlit-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+              name: http
+          env:
+            - name: ELASTICSEARCH_HOST
+              value: "elasticsearch"
+            - name: ELASTICSEARCH_PORT
+              value: "9200"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30

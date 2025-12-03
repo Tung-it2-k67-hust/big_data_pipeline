@@ -1,0 +1,67 @@
+# Kibana cho GKE
+# Kibana là tool trực quan hóa dữ liệu từ Elasticsearch
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: big-data-pipeline
+  labels:
+    app: kibana
+spec:
+  # LoadBalancer để có External IP trên GKE
+  type: LoadBalancer
+  ports:
+    - port: 5601
+      targetPort: 5601
+      name: http
+  selector:
+    app: kibana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: big-data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.4.3
+          ports:
+            - containerPort: 5601
+              name: http
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: "http://elasticsearch:9200"
+            - name: SERVER_NAME
+              value: "kibana"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 30
