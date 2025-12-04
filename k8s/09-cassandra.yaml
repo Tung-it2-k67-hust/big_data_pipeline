@@ -213,9 +213,10 @@ spec:
       name: cassandra-data
     spec:
       accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "standard-rwo"
       resources:
         requests:
-          storage: 10Gi
+          storage: 20Gi
 ---
 apiVersion: batch/v1
 kind: Job
