@@ -9,7 +9,7 @@ data:
     CREATE KEYSPACE IF NOT EXISTS bigdata_pipeline
     WITH replication = {
         'class': 'SimpleStrategy',
-        'replication_factor': 1
+        'replication_factor': 3
     };
 
     USE bigdata_pipeline;
@@ -121,7 +121,7 @@ metadata:
     app: cassandra
 spec:
   serviceName: cassandra
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: cassandra
@@ -168,7 +168,7 @@ spec:
         - name: HEAP_NEWSIZE
           value: 256M
         - name: CASSANDRA_SEEDS
-          value: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local"
+          value: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local,cassandra-1.cassandra.big-data-pipeline.svc.cluster.local,cassandra-2.cassandra.big-data-pipeline.svc.cluster.local"
         - name: CASSANDRA_CLUSTER_NAME
           value: "BigDataPipelineCluster"
         - name: CASSANDRA_DC
