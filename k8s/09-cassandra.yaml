@@ -146,11 +146,11 @@ spec:
           name: cql
         resources:
           limits:
-            cpu: "2000m"
-            memory: 4Gi
-          requests:
             cpu: "1000m"
             memory: 2Gi
+          requests:
+            cpu: "500m"
+            memory: 1Gi
         securityContext:
           capabilities:
             add:
@@ -216,7 +216,7 @@ spec:
       storageClassName: "standard-rwo"
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi
 ---
 apiVersion: batch/v1
 kind: Job

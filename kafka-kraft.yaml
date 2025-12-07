@@ -49,3 +49,10 @@ spec:
     - broker
   storage:
     type: ephemeral # Dùng ephemeral cho nhẹ, reset pod là mất dữ liệu (chỉ dùng cho lab/demo)
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
