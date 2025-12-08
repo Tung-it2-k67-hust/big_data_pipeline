@@ -1,17 +1,14 @@
-"""
-Spark Streaming Application for Real-time Data Processing
-Consumes data from Kafka, processes it, and sends to Elasticsearch and Cassandra
-"""
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, window, count, sum as spark_sum, avg
+from pyspark.sql.functions import col, window, count, sum as spark_sum, avg, to_timestamp, expr, when, lit, concat_ws
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_spark_session(app_name="BigDataPipeline"):
+def create_spark_session(app_name="FootballDataPipeline"):
     """Create and configure Spark session"""
     spark = SparkSession.builder \
         .appName(app_name) \
@@ -29,17 +26,34 @@ def create_spark_session(app_name="BigDataPipeline"):
 
 
 def define_schema():
-    """Define schema for incoming data"""
+    """Define schema for incoming football match data"""
     return StructType([
-        StructField("timestamp", StringType(), True),
-        StructField("user_id", IntegerType(), True),
-        StructField("event_type", StringType(), True),
-        StructField("product_id", IntegerType(), True),
-        StructField("price", DoubleType(), True),
-        StructField("quantity", IntegerType(), True),
-        StructField("session_id", IntegerType(), True),
-        StructField("region", StringType(), True),
-        StructField("device", StringType(), True)
+        StructField("Season", StringType(), True),
+        StructField("Div", StringType(), True),
+        StructField("Date", StringType(), True), 
+        StructField("HomeTeam", StringType(), True),
+        StructField("AwayTeam", StringType(), True),
+        StructField("FTHG", IntegerType(), True), # Full Time Home Goals
+        StructField("FTAG", IntegerType(), True), # Full Time Away Goals
+        StructField("FTR", StringType(), True), # Full Time Result (H, D, A)
+        StructField("HTHG", IntegerType(), True),
+        StructField("HTAG", IntegerType(), True),
+        StructField("HTR", StringType(), True),
+        StructField("HS", IntegerType(), True), # Home Shots
+        StructField("AS", IntegerType(), True), # Away Shots
+        StructField("HST", IntegerType(), True), # Home Shots on Target
+        StructField("AST", IntegerType(), True), # Away Shots on Target
+        StructField("HF", IntegerType(), True), # Home Fouls
+        StructField("AF", IntegerType(), True), # Away Fouls
+        StructField("HC", IntegerType(), True), # Home Corners
+        StructField("AC", IntegerType(), True), # Away Corners
+        StructField("HV", StringType(), True), # Home Yellow Cards 
+        StructField("AV", StringType(), True), # Away Yellow Cards
+        StructField("HR", StringType(), True), # Home Red Cards
+        StructField("AR", StringType(), True), # Away Red Cards
+        StructField("PSH", DoubleType(), True), # Pre-Match odds: Home Win
+        StructField("PSD", DoubleType(), True), # Pre-Match odds: Draw
+        StructField("PSA", DoubleType(), True)  # Pre-Match odds: Away Win
     ])
 
 
@@ -58,53 +72,64 @@ def read_from_kafka(spark, kafka_servers, topic):
 
 
 def process_stream(df, schema):
-    """Process the streaming data"""
-    # Parse JSON data
+    """Process the streaming football match data"""
     parsed_df = df.select(
-        from_json(col("value").cast("string"), schema).alias("data"),
+        col("value").cast("string").alias("value_string"),
         col("timestamp").alias("kafka_timestamp")
+    )
+    parsed_df = parsed_df.select(
+        expr("from_json(value_string, '{}')".format(schema.json())).alias("data"),
+        col("kafka_timestamp")
     ).select("data.*", "kafka_timestamp")
     
-    # Add processing timestamp
-    from pyspark.sql.functions import current_timestamp
+    from pyspark.sql.functions import current_timestamp, to_date
     processed_df = parsed_df.withColumn("processing_timestamp", current_timestamp())
     
-    # Calculate revenue
-    from pyspark.sql.functions import expr
-    processed_df = processed_df.withColumn("revenue", expr("price * quantity"))
+    date_formats = ["dd/MM/yyyy", "M/d/yyyy", "dd/MM/yy", "M/d/yy"] 
     
+    date_col = to_date(col("Date"), date_formats[0])
+    for fmt in date_formats[1:]:
+        date_col = when(col("Date").isNotNull(), to_date(col("Date"), fmt)).otherwise(date_col)
+
+    processed_df = processed_df.withColumn("match_date", date_col)
+    
+    processed_df = processed_df.withColumn("TotalGoals", expr("FTHG + FTAG")) \
+                               .withColumn("HomeWinFlag", when(col("FTR") == lit("H"), lit(1)).otherwise(lit(0))) \
+                               .withColumn("AwayWinFlag", when(col("FTR") == lit("A"), lit(1)).otherwise(lit(0))) \
+                               .withColumn("DrawFlag", when(col("FTR") == lit("D"), lit(1)).otherwise(lit(0)))
+
     return processed_df
 
 
 def create_aggregations(df):
-    """Create real-time aggregations"""
-    # Convert string timestamp to timestamp type
-    from pyspark.sql.functions import to_timestamp
-    df = df.withColumn("event_time", to_timestamp(col("timestamp")))
+    """Create real-time aggregations (e.g., total goals per division/season)"""
     
-    # Add watermark to handle late data (allow 10 minutes late arrivals)
-    df = df.withWatermark("event_time", "10 minutes")
-    
-    # Aggregate by event type and region
+    # Aggregate by Division and Season over a tumbling window (e.g., 1 day) based on match_date
     agg_df = df.groupBy(
-        window(col("event_time"), "1 minute"),
-        col("event_type"),
-        col("region")
+        window(col("match_date"), "1 day", "1 day").alias("time_window"), 
+        col("Div"),
+        col("Season")
     ).agg(
-        count("*").alias("event_count"),
-        spark_sum("revenue").alias("total_revenue"),
-        avg("price").alias("avg_price")
+        count("*").alias("match_count"),
+        spark_sum("TotalGoals").alias("total_goals"),
+        spark_sum("HomeWinFlag").alias("home_wins"),
+        spark_sum("AwayWinFlag").alias("away_wins"),
+        spark_sum("DrawFlag").alias("draws"),
+        avg("TotalGoals").alias("avg_goals_per_match"),
+        avg("PSH").alias("avg_odds_home"),
+        avg("PSD").alias("avg_odds_draw"),
+        avg("PSA").alias("avg_odds_away")
     )
     
     return agg_df
 
 
-def write_to_elasticsearch(df, es_nodes, index_name, output_mode="append"):
+def write_to_elasticsearch(df, es_nodes, index_name):
     """Write streaming data to Elasticsearch"""
-    logger.info(f"Writing to Elasticsearch index: {index_name} with mode: {output_mode}")
+    logger.info(f"Writing to Elasticsearch index: {index_name}")
     
     query = df.writeStream \
-        .outputMode(output_mode) \
+        .outputMode("append") \
         .format("org.elasticsearch.spark.sql") \
         .option("es.nodes", es_nodes) \
         .option("es.port", "9200") \
@@ -127,15 +152,14 @@ def write_to_console(df, query_name="console_output"):
     return query
 
 
-def write_to_cassandra(df, keyspace, table, output_mode="append"):
+def write_to_cassandra(df, keyspace, table):
     """Write streaming data to Cassandra"""
-    logger.info(f"Writing to Cassandra keyspace: {keyspace}, table: {table} with mode: {output_mode}")
+    logger.info(f"Writing to Cassandra keyspace: {keyspace}, table: {table}")
     
     def write_batch_to_cassandra(batch_df, batch_id):
         """Function to write each batch to Cassandra"""
-        import os
         cassandra_host = os.getenv('CASSANDRA_HOST', 'cassandra')
-        cassandra_port = os.getenv('CASSANDRA_PORT', '9042')
+        cassandra_port = os.getenv('CASSANDRA_PORT', '9042')  
         
         batch_df.write \
             .format("org.apache.spark.sql.cassandra") \
@@ -149,7 +173,7 @@ def write_to_cassandra(df, keyspace, table, output_mode="append"):
         logger.info(f"Batch {batch_id} written to Cassandra table {keyspace}.{table}")
     
     query = df.writeStream \
-        .outputMode(output_mode) \
+        .outputMode("append") \
         .foreachBatch(write_batch_to_cassandra) \
         .option("checkpointLocation", f"/tmp/checkpoint/cassandra_{table}") \
         .start()
@@ -158,37 +182,43 @@ def write_to_cassandra(df, keyspace, table, output_mode="append"):
 
 
 def prepare_cassandra_events(df):
-    """Prepare DataFrame for Cassandra events table"""
-    from pyspark.sql.functions import expr, to_timestamp, date_format
+    """Prepare DataFrame for Cassandra 'matches' table (raw data)"""
+    from pyspark.sql.functions import expr
     
     cassandra_df = df.select(
-        expr("uuid()").alias("event_id"),
-        col("event_type"),
-        col("user_id").cast("string").alias("user_id"),
-        col("product_id").cast("string").alias("product_id"),
-        col("price").cast("decimal(10,2)").alias("price"),
-        col("quantity"),
-        col("region"),
-        col("device"),
-        to_timestamp(col("timestamp")).alias("timestamp")
+        expr("uuid()").alias("match_id"),
+        col("Season"),
+        col("Div"),
+        col("match_date").alias("date"),
+        col("HomeTeam"),
+        col("AwayTeam"),
+        col("FTHG"),
+        col("FTAG"),
+        col("FTR"),
+        col("TotalGoals"),
+        concat_ws(" vs ", col("HomeTeam"), col("AwayTeam")).alias("match_title")
+    ).withColumn(
+        "processed_timestamp", col("processing_timestamp")
     )
     
     return cassandra_df
 
 
 def prepare_cassandra_metrics(agg_df):
-    """Prepare aggregated DataFrame for Cassandra metrics tables"""
-    from pyspark.sql.functions import expr
+    """Prepare aggregated DataFrame for Cassandra 'metrics_by_division_season' table"""
     
-    # Prepare metrics by region
     metrics_by_region = agg_df.select(
-        col("region"),
-        col("window.start").alias("window_start"),
-        col("window.end").alias("window_end"),
-        col("event_type"),
-        col("event_count").cast("bigint").alias("total_events"),
-        col("total_revenue").cast("decimal(15,2)").alias("total_revenue"),
-        col("avg_price").cast("decimal(10,2)").alias("avg_price")
+        concat_ws("-", col("Div"), col("Season")).alias("division_season_key"),
+        col("Div").alias("division"),
+        col("Season").alias("season"),
+        col("time_window.start").alias("window_start"),
+        col("time_window.end").alias("window_end"),
+        col("match_count"),
+        col("total_goals").cast("bigint").alias("total_goals"),
+        col("avg_goals_per_match").cast("decimal(4,2)").alias("avg_goals_per_match"),
+        col("home_wins"),
+        col("away_wins"),
+        col("draws")
     )
     
     return metrics_by_region
@@ -196,14 +226,13 @@ def prepare_cassandra_metrics(agg_df):
 
 def main():
     """Main entry point"""
-    import os
     
     # Configuration from environment variables
     kafka_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-    kafka_topic = os.getenv('KAFKA_TOPIC', 'data-stream')
+    kafka_topic = os.getenv('KAFKA_TOPIC', 'football-stream')
     es_nodes = os.getenv('ELASTICSEARCH_NODES', 'elasticsearch')
-    es_index = os.getenv('ELASTICSEARCH_INDEX', 'events')
-    es_agg_index = os.getenv('ELASTICSEARCH_AGG_INDEX', 'events-aggregated')
+    es_index = os.getenv('ELASTICSEARCH_INDEX', 'football-matches')
+    es_agg_index = os.getenv('ELASTICSEARCH_AGG_INDEX', 'football-metrics')
     cassandra_keyspace = os.getenv('CASSANDRA_KEYSPACE', 'bigdata_pipeline')
     
     # Create Spark session
@@ -222,23 +251,23 @@ def main():
     agg_df = create_aggregations(processed_df)
     
     # Write raw data to Elasticsearch
-    query1 = write_to_elasticsearch(processed_df, es_nodes, es_index, "append")
+    query1 = write_to_elasticsearch(processed_df, es_nodes, es_index)
     
-    # Write aggregated data to Elasticsearch (use 'update' mode for aggregations)
-    query2 = write_to_elasticsearch(agg_df, es_nodes, es_agg_index, "update")
+    # Write aggregated data to Elasticsearch
+    query2 = write_to_elasticsearch(agg_df, es_nodes, es_agg_index)
     
     # Prepare and write to Cassandra
     cassandra_events = prepare_cassandra_events(processed_df)
-    query4 = write_to_cassandra(cassandra_events, cassandra_keyspace, "events", "append")
+    query4 = write_to_cassandra(cassandra_events, cassandra_keyspace, "matches")
     
-    # Prepare and write aggregated metrics to Cassandra (use 'update' mode for aggregations)
+    # Prepare and write aggregated metrics to Cassandra
     cassandra_metrics = prepare_cassandra_metrics(agg_df)
-    query5 = write_to_cassandra(cassandra_metrics, cassandra_keyspace, "metrics_by_region", "update")
+    query5 = write_to_cassandra(cassandra_metrics, cassandra_keyspace, "metrics_by_division_season")
     
     # Also write to console for monitoring
-    query3 = write_to_console(processed_df.limit(10), "raw_data")
+    query3 = write_to_console(processed_df.limit(10), "raw_match_data")
     
-    logger.info("Spark Streaming application started with Elasticsearch and Cassandra sinks")
+    logger.info("Spark Streaming application for Football Data started with Elasticsearch and Cassandra sinks")
     
     # Wait for termination
     spark.streams.awaitAnyTermination()
