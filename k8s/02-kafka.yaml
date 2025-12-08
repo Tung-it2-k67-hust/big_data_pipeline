@@ -47,6 +47,15 @@ spec:
               value: "true"
             - name: KAFKA_LOG_RETENTION_HOURS
               value: "168"
+            - name: KAFKA_HEAP_OPTS  # THÊM DÒNG NÀY để giới hạn Java Heap Kafka
+              value: "-Xmx256m -Xms256m"
+          resources:  # THÊM ĐOẠN NÀY
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           volumeMounts:
             - name: kafka-data
               mountPath: /var/lib/kafka
@@ -57,4 +66,4 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 20Gi
+            storage: 10Gi

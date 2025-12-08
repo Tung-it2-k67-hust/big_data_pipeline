@@ -37,8 +37,8 @@ spec:
               value: "bigdata_pipeline"
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              memory: "256Mi" # Giảm từ 512Mi để dễ tìm node trống
+              cpu: "100m"
             limits:
-              memory: "1Gi"
+              memory: "1Gi"   # Giữ nguyên để Spark có chỗ thở khi xử lý
               cpu: "500m"

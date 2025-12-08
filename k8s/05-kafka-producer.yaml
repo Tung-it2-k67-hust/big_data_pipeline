@@ -13,12 +13,13 @@ spec:
     metadata:
       labels:
         app: kafka-producer
+    spec:
       initContainers:
         - name: download-csv
           image: google/cloud-sdk:alpine
           command: ["/bin/sh", "-c"]
           args:
-            - gsutil cp gs://big-data-pipeline-data-robust-magpie-479807-f1/data/full_dataset.csv /data/full_dataset.csv
+            - gsutil cp gs://gcp-data-pipeline-files-tung/data/full_dataset.csv /data/full_dataset.csv
           volumeMounts:
             - name: csv-data
               mountPath: /data
@@ -28,7 +29,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+              value: "kafka:9092"
             - name: KAFKA_TOPIC
               value: "data-stream"
             - name: PRODUCER_INTERVAL

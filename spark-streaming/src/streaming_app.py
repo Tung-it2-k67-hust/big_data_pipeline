@@ -82,6 +82,9 @@ def create_aggregations(df):
     from pyspark.sql.functions import to_timestamp
     df = df.withColumn("event_time", to_timestamp(col("timestamp")))
     
+    # Add watermark to handle late data (allow 10 minutes late arrivals)
+    df = df.withWatermark("event_time", "10 minutes")
+    
     # Aggregate by event type and region
     agg_df = df.groupBy(
         window(col("event_time"), "1 minute"),
@@ -96,12 +99,12 @@ def create_aggregations(df):
     return agg_df
 
 
-def write_to_elasticsearch(df, es_nodes, index_name):
+def write_to_elasticsearch(df, es_nodes, index_name, output_mode="append"):
     """Write streaming data to Elasticsearch"""
-    logger.info(f"Writing to Elasticsearch index: {index_name}")
+    logger.info(f"Writing to Elasticsearch index: {index_name} with mode: {output_mode}")
     
     query = df.writeStream \
-        .outputMode("append") \
+        .outputMode(output_mode) \
         .format("org.elasticsearch.spark.sql") \
         .option("es.nodes", es_nodes) \
         .option("es.port", "9200") \
@@ -124,9 +127,9 @@ def write_to_console(df, query_name="console_output"):
     return query
 
 
-def write_to_cassandra(df, keyspace, table):
+def write_to_cassandra(df, keyspace, table, output_mode="append"):
     """Write streaming data to Cassandra"""
-    logger.info(f"Writing to Cassandra keyspace: {keyspace}, table: {table}")
+    logger.info(f"Writing to Cassandra keyspace: {keyspace}, table: {table} with mode: {output_mode}")
     
     def write_batch_to_cassandra(batch_df, batch_id):
         """Function to write each batch to Cassandra"""
@@ -146,7 +149,7 @@ def write_to_cassandra(df, keyspace, table):
         logger.info(f"Batch {batch_id} written to Cassandra table {keyspace}.{table}")
     
     query = df.writeStream \
-        .outputMode("append") \
+        .outputMode(output_mode) \
         .foreachBatch(write_batch_to_cassandra) \
         .option("checkpointLocation", f"/tmp/checkpoint/cassandra_{table}") \
         .start()
@@ -219,18 +222,18 @@ def main():
     agg_df = create_aggregations(processed_df)
     
     # Write raw data to Elasticsearch
-    query1 = write_to_elasticsearch(processed_df, es_nodes, es_index)
+    query1 = write_to_elasticsearch(processed_df, es_nodes, es_index, "append")
     
-    # Write aggregated data to Elasticsearch
-    query2 = write_to_elasticsearch(agg_df, es_nodes, es_agg_index)
+    # Write aggregated data to Elasticsearch (use 'update' mode for aggregations)
+    query2 = write_to_elasticsearch(agg_df, es_nodes, es_agg_index, "update")
     
     # Prepare and write to Cassandra
     cassandra_events = prepare_cassandra_events(processed_df)
-    query4 = write_to_cassandra(cassandra_events, cassandra_keyspace, "events")
+    query4 = write_to_cassandra(cassandra_events, cassandra_keyspace, "events", "append")
     
-    # Prepare and write aggregated metrics to Cassandra
+    # Prepare and write aggregated metrics to Cassandra (use 'update' mode for aggregations)
     cassandra_metrics = prepare_cassandra_metrics(agg_df)
-    query5 = write_to_cassandra(cassandra_metrics, cassandra_keyspace, "metrics_by_region")
+    query5 = write_to_cassandra(cassandra_metrics, cassandra_keyspace, "metrics_by_region", "update")
     
     # Also write to console for monitoring
     query3 = write_to_console(processed_df.limit(10), "raw_data")

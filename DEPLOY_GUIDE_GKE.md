@@ -15,7 +15,7 @@ exec -l $SHELL
 gcloud init
 # → Chọn account Google của bạn
 # → Tạo hoặc chọn project (ví dụ: my-bigdata-project-123)
-# → Chọn region mặc định: asia-northeast1
+# → Chọn region mặc định: asia-northeast2
 
 # 3. Cài kubectl và plugin GKE
 gcloud components install kubectl
@@ -32,8 +32,8 @@ gcloud services enable cloudbuild.googleapis.com
 
 # 5. Tạo cluster GKE của riêng bạn
 # Thay [YOUR_NAME] bằng tên của bạn (ví dụ: tung-cluster, dat-cluster)
-gcloud container clusters create [YOUR_NAME]-cluster \
-  --zone asia-northeast1-c \
+gcloud container clusters create cluster-2 \
+  --zone asia-northeast2-a \
   --num-nodes 3 \
   --machine-type e2-standard-4 \
   --disk-size 50 \
@@ -44,9 +44,9 @@ gcloud container clusters create [YOUR_NAME]-cluster \
   --enable-autoupgrade
 
 # 6. Kết nối kubectl với cluster
-gcloud container clusters get-credentials [YOUR_NAME]-cluster \
-  --zone asia-northeast1-c \
-  --project [YOUR_PROJECT_ID]
+gcloud container clusters get-credentials cluster-2 \
+  --zone asia-northeast2-a \
+  --project robust-magpie-479807-f1
 
 # 7. Kiểm tra kết nối
 kubectl config current-context
@@ -75,10 +75,10 @@ kubectl get pods -n kafka -w
 
 # 13. Lấy EXTERNAL-IP của Kafka
 kubectl get svc -n kafka | grep external-bootstrap
-# Lưu lại EXTERNAL-IP (ví dụ: 34.180.65.245)
+# Lưu lại EXTERNAL-IP (ví dụ: 34.118.231.42)
 
 # 14. Test Kafka với Producer/Consumer
-export KAFKA_EXTERNAL_IP=[IP_TỪ_BƯỚC_13]
+export KAFKA_EXTERNAL_IP=34.118.231.42
 export KAFKA_BOOTSTRAP_SERVERS=$KAFKA_EXTERNAL_IP:9094
 
 # Tạo venv và cài thư viện
@@ -105,7 +105,7 @@ python consumer.py
 # 15. Tạo Artifact Registry
 gcloud artifacts repositories create my-repo \
   --repository-format=docker \
-  --location=asia-northeast1 \
+  --location=asia-northeast2 \
   --description="Docker repository for Big Data Pipeline"
 
 # 16. Build và Push images bằng Cloud Build
@@ -124,7 +124,7 @@ gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=[YOUR_
 
 # 17. Kiểm tra images đã push thành công
 gcloud artifacts docker images list \
-  asia-northeast1-docker.pkg.dev/[YOUR_PROJECT_ID]/my-repo \
+  asia-northeast2-docker.pkg.dev/robust-magpie-479807-f1/my-repo \
   --include-tags
 
 # ============================================
@@ -228,8 +228,8 @@ kubectl scale deployment kafka-producer --replicas=3 -n big-data-pipeline
 
 # 40. Enable autoscaling cho cluster
 gcloud container node-pools update default-pool \
-  --cluster=[YOUR_NAME]-cluster \
-  --zone=asia-northeast1-c \
+  --cluster=cluster-2 \
+  --zone=asia-northeast2-a \
   --enable-autoscaling \
   --min-nodes=1 \
   --max-nodes=5
@@ -250,13 +250,13 @@ kubectl delete namespace big-data-pipeline
 kubectl delete namespace kafka
 
 # 43. Xóa cluster (tiết kiệm chi phí)
-gcloud container clusters delete [YOUR_NAME]-cluster \
-  --zone asia-northeast1-c \
+gcloud container clusters delete cluster-2 \
+  --zone=asia-northeast2-a \
   --quiet
 
 # 44. Xóa Artifact Registry repository
 gcloud artifacts repositories delete my-repo \
-  --location=asia-northeast1 \
+  --location=asia-northeast2 \
   --quiet
 
 # ============================================
