@@ -166,6 +166,7 @@ def write_to_cassandra(df, keyspace, table):
             
     # Thêm query name để dễ quản lý trong Spark UI
     return df.writeStream.queryName(f"Writer_{table}") \
+             .option("checkpointLocation", f"/tmp/checkpoint/cassandra_{table}") \
              .foreachBatch(write_batch).outputMode("append").start()
 
 def write_to_elasticsearch(df, index_name):
