@@ -20,21 +20,15 @@ spec:
           imagePullPolicy: Always
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+              value: "kafka:9092"
             - name: KAFKA_TOPIC
-              value: "data-stream"
+              value: "football-stream"  # Sửa lại cho đúng topic của Producer
             - name: ELASTICSEARCH_NODES
               value: "elasticsearch"
             - name: ELASTICSEARCH_INDEX
-              value: "events"
-            - name: ELASTICSEARCH_AGG_INDEX
-              value: "events-aggregated"
+              value: "football-matches" # Sửa lại cho đúng index Dashboard tìm
             - name: CASSANDRA_HOST
-              value: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local"
-            - name: CASSANDRA_PORT
-              value: "9042"
-            - name: CASSANDRA_KEYSPACE
-              value: "bigdata_pipeline"
+              value: "cassandra"         # Dùng tên service ngắn gọn cho ổn định
           resources:
             requests:
               memory: "256Mi" # Giảm từ 512Mi để dễ tìm node trống

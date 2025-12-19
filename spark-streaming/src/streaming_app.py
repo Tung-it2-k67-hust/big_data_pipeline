@@ -2,7 +2,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, expr, when, lit, count,
     sum as spark_sum, avg,
-    current_timestamp, to_date, from_json
+    current_timestamp, to_date, from_json,
+    md5, concat_ws  # <-- Thêm 2 hàm này
 )
 from pyspark.sql.types import (
     StructType, StructField,
@@ -21,19 +22,25 @@ logger = logging.getLogger(__name__)
 # Spark Session
 # --------------------------------------------------
 def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
-    # Đảm bảo các dòng .config không bị ngắt bởi comment sai chỗ
+    # Sử dụng ELASTICSEARCH_NODES để khớp với file YAML Deployment của bạn
+    es_nodes = os.getenv("ELASTICSEARCH_NODES", "elasticsearch")
+    
     spark = SparkSession.builder \
         .appName(app_name) \
         .config("spark.jars.packages", 
-                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,"
-                "com.datastax.spark:spark-cassandra-connector_2.12:3.3.0,"
-                "org.elasticsearch:elasticsearch-spark-30_2.12:8.4.3") \
+                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                "com.datastax.spark:spark-cassandra-connector_2.12:3.5.0,"
+                "org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0") \
         .config("spark.sql.shuffle.partitions", "4") \
-        .config("spark.es.nodes", os.getenv("ELASTICSEARCH_HOST", "elasticsearch")) \
+        .config("spark.es.nodes", es_nodes) \
         .config("spark.es.port", "9200") \
         .config("spark.es.nodes.wan.only", "true") \
         .config("spark.es.index.auto.create", "true") \
         .getOrCreate()
+
+    spark.sparkContext.setLogLevel("WARN")
+    logger.info(f"Spark session created. Connecting to ES nodes: {es_nodes}")
+    return spark
 
     spark.sparkContext.setLogLevel("WARN")
     logger.info("Spark session created with dual-sink support")
@@ -80,29 +87,38 @@ def read_from_kafka(spark, servers, topic):
         .format("kafka") \
         .option("kafka.bootstrap.servers", servers) \
         .option("subscribe", topic) \
-        .option("startingOffsets", "latest") \
+        .option("startingOffsets", "earliest") \
         .load()
 
 # --------------------------------------------------
 # Process Stream
 # --------------------------------------------------
 def process_stream(df, schema):
-    # Bước chuyển đổi quan trọng để tránh lỗi cú pháp parse JSON
+    # 1. Parse JSON từ Kafka
     json_df = df.selectExpr("CAST(value AS STRING) as json_payload")
-    
     parsed = json_df.select(
         from_json(col("json_payload"), schema).alias("data")
     ).select("data.*")
 
+    # 2. Thêm các cột tính toán
     processed = parsed \
         .withColumn("processing_ts", current_timestamp()) \
         .withColumn("match_date", to_date(col("Date"), "dd/MM/yyyy")) \
-        .withColumn("TotalGoals", col("FTHG") + col("FTAG")) \
-        .withColumn("HomeWinFlag", when(col("FTR") == "H", 1).otherwise(0)) \
-        .withColumn("AwayWinFlag", when(col("FTR") == "A", 1).otherwise(0)) \
-        .withColumn("DrawFlag", when(col("FTR") == "D", 1).otherwise(0))
+        .withColumn("totalgoals", col("FTHG") + col("FTAG")) \
+        .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0)) \
+        .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0)) \
+        .withColumn("drawflag", when(col("FTR") == "D", 1).otherwise(0))
 
-    return processed
+    # 3. QUAN TRỌNG: Chuyển TẤT CẢ tên cột thành chữ thường để khớp với Cassandra
+    # Điều này giải quyết lỗi "Columns not found"
+    final_df = processed.toDF(*[c.lower() for c in processed.columns])
+    
+    # 4. Tạo match_id dựa trên các cột đã viết thường
+    from pyspark.sql.functions import md5, concat_ws
+    final_df = final_df.withColumn("match_id", 
+        md5(concat_ws("-", col("season"), col("hometeam"), col("awayteam"), col("date"))))
+
+    return final_df
 
 # --------------------------------------------------
 # Writers
@@ -134,17 +150,21 @@ def main():
     spark = create_spark_session()
     schema = define_schema()
 
-    kafka_df = read_from_kafka(
-        spark,
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
-        os.getenv("KAFKA_TOPIC", "football-stream")
-    )
+    # Lấy cấu hình từ env để khớp với file 06-spark-streaming.yaml
+    kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+    # Đảm bảo topic khớp với Producer (football-stream)
+    kafka_topic = os.getenv("KAFKA_TOPIC", "football-stream")
+    # Đảm bảo index khớp với Dashboard (football-matches)
+    es_index = os.getenv("ELASTICSEARCH_INDEX", "football-matches")
 
+    logger.info(f"Starting stream from {kafka_bootstrap} topic {kafka_topic}")
+
+    kafka_df = read_from_kafka(spark, kafka_bootstrap, kafka_topic)
     processed = process_stream(kafka_df, schema)
 
-    # Khởi chạy các luồng song song
+    # Ghi song song
     q1 = write_to_cassandra(processed, "football_stats", "matches")
-    q_es = write_to_elasticsearch(processed, "football-matches")
+    q_es = write_to_elasticsearch(processed, es_index)
 
     spark.streams.awaitAnyTermination()
 
