@@ -1,302 +1,132 @@
-# ============================================
-# HƯỚNG DẪN DEPLOY BIG DATA PIPELINE LÊN GOOGLE KUBERNETES ENGINE (GKE)
-# Dành cho teammate test riêng các service: Kafka, Spark Streaming, Cassandra, Elasticsearch, Streamlit
-# ============================================
+Dưới đây là hướng dẫn cô đọng và thực tế để bạn đưa vào báo cáo hoặc tài liệu hướng dẫn.
 
-# ============================================
-# PHẦN 1: SETUP MÔI TRƯỜNG (Chỉ làm 1 lần)
-# ============================================
+Phần 1 là **Quy trình cập nhật code (CI/CD thủ công)** khi bạn sửa file Python.
+Phần 2 là **Kịch bản Demo (Showcase)** để trình bày kết quả cho các thầy cô, chứng minh hệ thống hoạt động thực tế.
 
-# 1. Cài đặt Google Cloud SDK trên Ubuntu WSL
-curl https://sdk.cloud.google.com | bash
-exec -l $SHELL
+-----
 
-# 2. Đăng nhập Google Cloud
-gcloud init
-# → Chọn account Google của bạn
-# → Tạo hoặc chọn project (ví dụ: my-bigdata-project-123)
-# → Chọn region mặc định: asia-northeast2
+### PHẦN 1: QUY TRÌNH CẬP NHẬT CODE (UPDATE PIPELINE)
 
-# 3. Cài kubectl và plugin GKE
-gcloud components install kubectl
-gcloud components install gke-gcloud-auth-plugin
+Khi bạn sửa bất kỳ file `.py` nào (ví dụ: sửa logic Spark, sửa giao diện Streamlit), bạn **BẮT BUỘC** phải thực hiện 3 bước: **Build -\> Push -\> Restart Deployment**.
 
-# 4. Bật các API cần thiết
-gcloud services enable container.googleapis.com
-gcloud services enable artifactregistry.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
+**Biến môi trường chung (Chạy lệnh này trước mỗi lần làm việc):**
 
-# ============================================
-# PHẦN 2: TẠO GKE CLUSTER (Mỗi người 1 cluster riêng)
-# ============================================
+```bash
+export PROJECT_ID="robust-magpie-479807-f1"
+export NAMESPACE="big-data-pipeline"
+```
 
-# 5. Tạo cluster GKE của riêng bạn
-# Thay [YOUR_NAME] bằng tên của bạn (ví dụ: tung-cluster, dat-cluster)
-gcloud container clusters create cluster-2 \
-  --zone asia-northeast2-a \
-  --num-nodes 3 \
-  --machine-type e2-standard-4 \
-  --disk-size 50 \
-  --enable-autoscaling \
-  --min-nodes 1 \
-  --max-nodes 5 \
-  --enable-autorepair \
-  --enable-autoupgrade
+#### 1\. Nếu sửa Kafka Producer (`producer.py`)
 
-# 6. Kết nối kubectl với cluster
-gcloud container clusters get-credentials cluster-2 \
-  --zone asia-northeast2-a \
-  --project robust-magpie-479807-f1
+Dùng khi bạn muốn thay đổi tốc độ gửi tin, hoặc thay đổi dữ liệu đầu vào.
 
-# 7. Kiểm tra kết nối
-kubectl config current-context
-kubectl get nodes
-
-# ============================================
-# PHẦN 3: DEPLOY KAFKA KRAFT (Message Broker)
-# ============================================
-
-# 8. Tạo namespace cho Kafka
-kubectl create namespace kafka
-
-# 9. Cài đặt Strimzi Operator
-kubectl create -f 'https://strimzi.io/install/latest?namespace=kafka' -n kafka
-
-# 10. Chờ Operator khởi động
-kubectl get pods -n kafka -w
-# Chờ đến khi strimzi-cluster-operator Running
-
-# 11. Deploy Kafka KRaft cluster
-kubectl apply -f kafka-kraft.yaml
-
-# 12. Chờ Kafka cluster khởi động (5-10 phút)
-kubectl get pods -n kafka -w
-# Chờ đến khi my-cluster-dual-role-0, my-cluster-dual-role-1, my-cluster-dual-role-2 Running
-
-# 13. Lấy EXTERNAL-IP của Kafka
-kubectl get svc -n kafka | grep external-bootstrap
-# Lưu lại EXTERNAL-IP (ví dụ: 34.118.231.42)
-
-# 14. Test Kafka với Producer/Consumer
-export KAFKA_EXTERNAL_IP=34.118.231.42
-export KAFKA_BOOTSTRAP_SERVERS=$KAFKA_EXTERNAL_IP:9094
-
-# Tạo venv và cài thư viện
+```bash
+# 1. Di chuyển vào thư mục code
 cd kafka-producer
-python3 -m venv venv
-source venv/bin/activate
-pip install kafka-python
 
-# Chạy Producer
-cd src
-python producer.py
+# 2. Build và Push image mới lên Cloud (sử dụng Cloud Build)
+echo "📦 Building & Pushing Kafka Producer..."
+gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=$PROJECT_ID .
 
-# Mở terminal mới, chạy Consumer
-cd kafka-producer
-source venv/bin/activate
-export KAFKA_EXTERNAL_IP=[IP_TỪ_BƯỚC_13]
-cd src
-python consumer.py
+# 3. Cập nhật Deployment trên Kubernetes (Kéo image mới về)
+echo "🔄 Rolling Update Kafka Producer..."
+kubectl rollout restart deployment kafka-producer -n $NAMESPACE
 
-# ============================================
-# PHẦN 4: BUILD & PUSH DOCKER IMAGES LÊN GOOGLE CLOUD
-# ============================================
+# 4. Kiểm tra logs để chắc chắn code mới chạy ổn
+echo "🔍 Checking Logs..."
+kubectl logs -l app=kafka-producer -n $NAMESPACE --follow
+```
 
-# 15. Tạo Artifact Registry
-gcloud artifacts repositories create my-repo \
-  --repository-format=docker \
-  --location=asia-northeast2 \
-  --description="Docker repository for Big Data Pipeline"
+#### 2\. Nếu sửa Spark Streaming (`streaming_app.py`)
 
-# 16. Build và Push images bằng Cloud Build
-cd /path/to/big_data_pipeline
-./scripts/push-to-gke.sh
+Dùng khi bạn sửa logic tính toán, aggregation, watermark, hoặc logic ghi vào DB.
 
-# Hoặc build từng service riêng:
-cd kafka-producer
-gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=[YOUR_PROJECT_ID] .
+```bash
+# 1. Di chuyển vào thư mục code
+cd spark-streaming
 
-cd ../spark-streaming
-gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=[YOUR_PROJECT_ID] .
+# 2. Build và Push image mới
+echo "📦 Building & Pushing Spark Streaming..."
+gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=$PROJECT_ID .
 
-cd ../streamlit-dashboard
-gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=[YOUR_PROJECT_ID] .
+# 3. Cập nhật Deployment (Spark sẽ dừng xử lý cũ và chạy xử lý mới)
+echo "🔄 Rolling Update Spark Streaming..."
+kubectl rollout restart deployment spark-streaming -n $NAMESPACE
 
-# 17. Kiểm tra images đã push thành công
-gcloud artifacts docker images list \
-  asia-northeast2-docker.pkg.dev/robust-magpie-479807-f1/my-repo \
-  --include-tags
+# 4. Kiểm tra logs (Quan trọng: xem có lỗi logic không)
+echo "🔍 Checking Logs..."
+kubectl logs -l app=spark-streaming -n $NAMESPACE --follow
+```
 
-# ============================================
-# PHẦN 5: DEPLOY HẠ TẦNG (Elasticsearch, Cassandra)
-# ============================================
+#### 3\. Nếu sửa Streamlit Dashboard (`app.py`)
 
-# 18. Tạo namespace cho big data pipeline
-kubectl create namespace big-data-pipeline
+Dùng khi bạn chỉnh sửa biểu đồ, màu sắc, hoặc cách hiển thị dữ liệu.
 
-# 19. Deploy Elasticsearch
-kubectl apply -f k8s/03-elasticsearch.yaml
+```bash
+# 1. Di chuyển vào thư mục code
+cd streamlit-dashboard
 
-# 20. Deploy Kibana (optional)
-kubectl apply -f k8s/04-kibana.yaml
+# 2. Build và Push image mới
+echo "📦 Building & Pushing Streamlit..."
+gcloud builds submit --config=cloudbuild.yaml --substitutions=_PROJECT_ID=$PROJECT_ID .
 
-# 21. Deploy Cassandra
-kubectl apply -f k8s/09-cassandra.yaml
+# 3. Cập nhật Deployment
+echo "🔄 Rolling Update Streamlit..."
+kubectl rollout restart deployment streamlit -n $NAMESPACE
 
-# 22. Chờ các pods khởi động
-kubectl get pods -n big-data-pipeline -w
-# Chờ đến khi elasticsearch-0, cassandra-0 Running
+# 4. Lấy lại địa chỉ IP (nếu cần, thường IP không đổi)
+kubectl get svc streamlit -n $NAMESPACE
+```
 
-# 23. Kiểm tra Cassandra đã init schema chưa
-kubectl logs -n big-data-pipeline job/cassandra-schema-init
+-----
 
-# 24. Test kết nối Cassandra
-kubectl exec -it cassandra-0 -n big-data-pipeline -- cqlsh
-# Trong cqlsh:
-DESCRIBE KEYSPACES;
-USE bigdata_pipeline;
-DESCRIBE TABLES;
-exit
+### PHẦN 2: KẾT QUẢ CẦN SHOW CHO GIÁO VIÊN (DEMO SCRIPT)
 
-# ============================================
-# PHẦN 6: DEPLOY ỨNG DỤNG (Producer, Spark, Streamlit)
-# ============================================
+Khi báo cáo đồ án, bạn cần chứng minh được luồng dữ liệu đi từ đầu đến cuối (**End-to-End Pipeline**). Hãy mở sẵn các cửa sổ sau:
 
-# 25. Deploy Kafka Producer
-kubectl apply -f k8s/05-kafka-producer.yaml
+#### 1\. Show Hạ tầng (Chứng minh hệ thống Distributed)
 
-# 26. Deploy Spark Streaming
-kubectl apply -f k8s/06-spark-streaming.yaml
+Mở một terminal và chạy lệnh này để cho thấy tất cả các thành phần đang chạy trên Kubernetes (Cluster).
 
-# 27. Deploy Streamlit Dashboard
-kubectl apply -f k8s/07-streamlit.yaml
+  * **Lệnh:** `kubectl get pods -n big-data-pipeline`
+  * **Điểm nhấn:**
+      * Chỉ vào **Kafka, Zookeeper** (Message Queue).
+      * Chỉ vào **Elasticsearch, Cassandra** (NoSQL Databases).
+      * Chỉ vào **Spark Streaming** (Processing Engine).
+      * Trạng thái tất cả phải là **Running**.
 
-# 28. Kiểm tra tất cả pods
-kubectl get pods -n big-data-pipeline
-kubectl get pods -n kafka
+#### 2\. Show Luồng Dữ liệu Real-time (Logs)
 
-# 29. Xem logs của từng service
-kubectl logs -n big-data-pipeline deployment/kafka-producer --follow
-kubectl logs -n big-data-pipeline deployment/spark-streaming --follow
-kubectl logs -n big-data-pipeline deployment/streamlit --follow
+Đây là phần "kỹ thuật" nhất, chứng minh Spark đang xử lý từng giây.
 
-# ============================================
-# PHẦN 7: TRUY CẬP CÁC SERVICE
-# ============================================
+  * **Lệnh:** `kubectl logs -l app=spark-streaming -n big-data-pipeline --follow`
+  * **Giải thích:** "Đây là logs của Spark Streaming. Các thầy có thể thấy nó đang xử lý theo từng Batch (lô dữ liệu). Dòng `Batch ... completed` hiện ra liên tục nghĩa là dữ liệu đang chảy từ Kafka qua Spark và được ghi xuống Database."
 
-# 30. Lấy EXTERNAL-IP của Streamlit Dashboard
-kubectl get svc streamlit -n big-data-pipeline
-# Truy cập: http://[EXTERNAL-IP]:8501
+#### 3\. Show Kết quả Trực quan (Streamlit Dashboard)
 
-# 31. Lấy EXTERNAL-IP của Kibana (nếu deploy)
-kubectl get svc kibana -n big-data-pipeline
-# Truy cập: http://[EXTERNAL-IP]:5601
+Đây là phần quan trọng nhất để người xem dễ hình dung.
 
-# 32. Port-forward Elasticsearch (nếu muốn truy cập từ local)
-kubectl port-forward -n big-data-pipeline svc/elasticsearch 9200:9200
-# Truy cập: http://localhost:9200
+  * **Truy cập:** Trình duyệt web `http://[EXTERNAL-IP]:8501`
+  * **Điểm nhấn:**
+      * Chỉ vào các biểu đồ tự động cập nhật (nếu bạn để auto-refresh) hoặc bấm nút refresh.
+      * Giải thích dữ liệu này lấy từ **Elasticsearch/Cassandra**, nơi mà Spark vừa ghi dữ liệu vào.
+      * **Quan trọng:** Nếu có thể, hãy để Kafka Producer chạy chậm lại một chút để thầy cô thấy số lượng events tăng dần trên biểu đồ theo thời gian thực.
 
-# ============================================
-# PHẦN 8: MONITORING & DEBUG
-# ============================================
+#### 4\. (Tùy chọn) Show Dữ liệu Gốc trong Database
 
-# 33. Xem tất cả services
-kubectl get svc --all-namespaces
+Nếu thầy cô hỏi sâu "Dữ liệu lưu vào database trông như thế nào?", bạn dùng lệnh này:
 
-# 34. Xem events của namespace
-kubectl get events -n big-data-pipeline --sort-by='.lastTimestamp'
+  * **Cassandra:**
+    ```bash
+    kubectl exec -it cassandra-0 -n big-data-pipeline -- cqlsh -e "SELECT * FROM bigdata_pipeline.events LIMIT 5;"
+    ```
+  * **Giải thích:** "Đây là dữ liệu thô đã được chuẩn hóa và lưu trữ bền vững trong Cassandra."
 
-# 35. Describe pod nếu có lỗi
-kubectl describe pod [POD_NAME] -n big-data-pipeline
+-----
 
-# 36. Exec vào container để debug
-kubectl exec -it [POD_NAME] -n big-data-pipeline -- /bin/bash
+### 📝 Tóm tắt Kịch bản Demo:
 
-# 37. Xem logs real-time
-kubectl logs -n big-data-pipeline [POD_NAME] --follow --tail=100
-
-# 38. Xem resource usage
-kubectl top nodes
-kubectl top pods -n big-data-pipeline
-
-# ============================================
-# PHẦN 9: SCALE & AUTOSCALING
-# ============================================
-
-# 39. Scale số replicas của service
-kubectl scale deployment kafka-producer --replicas=3 -n big-data-pipeline
-
-# 40. Enable autoscaling cho cluster
-gcloud container node-pools update default-pool \
-  --cluster=cluster-2 \
-  --zone=asia-northeast2-a \
-  --enable-autoscaling \
-  --min-nodes=1 \
-  --max-nodes=5
-
-# 41. Enable Horizontal Pod Autoscaler (HPA)
-kubectl autoscale deployment spark-streaming \
-  --cpu-percent=80 \
-  --min=1 \
-  --max=5 \
-  -n big-data-pipeline
-
-# ============================================
-# PHẦN 10: CLEANUP (Khi test xong)
-# ============================================
-
-# 42. Xóa toàn bộ deployments trong namespace
-kubectl delete namespace big-data-pipeline
-kubectl delete namespace kafka
-
-# 43. Xóa cluster (tiết kiệm chi phí)
-gcloud container clusters delete cluster-2 \
-  --zone=asia-northeast2-a \
-  --quiet
-
-# 44. Xóa Artifact Registry repository
-gcloud artifacts repositories delete my-repo \
-  --location=asia-northeast2 \
-  --quiet
-
-# ============================================
-# PHẦN 11: TROUBLESHOOTING COMMON ISSUES
-# ============================================
-
-# Lỗi ImagePullBackOff:
-# → Kiểm tra image đã push lên Artifact Registry chưa
-# → Kiểm tra imagePullPolicy trong YAML
-
-# Lỗi CrashLoopBackOff:
-# → Xem logs: kubectl logs [POD_NAME] -n [NAMESPACE]
-# → Kiểm tra resources limits/requests
-# → Kiểm tra dependencies (Kafka, Cassandra có sẵn chưa)
-
-# Pod Pending:
-# → Xem events: kubectl describe pod [POD_NAME]
-# → Kiểm tra node có đủ resources không
-# → Scale cluster nếu cần
-
-# Không kết nối được Kafka:
-# → Kiểm tra KAFKA_BOOTSTRAP_SERVERS đúng chưa
-# → Kiểm tra firewall rules cho port 9094
-# → Test: telnet [KAFKA_IP] 9094
-
-# ============================================
-# PHẦN 12: TIPS & BEST PRACTICES
-# ============================================
-
-# 1. Luôn dùng namespace riêng cho mỗi môi trường (dev, staging, prod)
-# 2. Set resource limits để tránh một pod chiếm hết tài nguyên
-# 3. Enable monitoring với Prometheus/Grafana
-# 4. Backup dữ liệu Cassandra định kỳ
-# 5. Dùng ConfigMap/Secret cho configuration thay vì hardcode
-# 6. Tag images với version cụ thể thay vì :latest
-# 7. Test kỹ trên local trước khi deploy production
-# 8. Monitor cost trên Google Cloud Console
-# 9. Tắt cluster khi không dùng để tiết kiệm chi phí
-# 10. Đọc logs thường xuyên để phát hiện lỗi sớm
-
-# ============================================
-# KẾT THÚC - CHÚC BẠN DEPLOY THÀNH CÔNG! 🚀
-# ============================================
+1.  **Mở đầu:** "Hệ thống bao gồm các thành phần..." -\> Show **Terminal `kubectl get pods`**.
+2.  **Input:** "Kafka Producer đang đọc file CSV từ Google Cloud Storage và bắn vào hệ thống..." -\> (Optional: Show log Producer).
+3.  **Process:** "Spark Streaming đọc từ Kafka, tổng hợp dữ liệu..." -\> Show **Terminal Log Spark**.
+4.  **Output:** "Kết quả cuối cùng được hiển thị tại đây..." -\> Show **Web Dashboard**.

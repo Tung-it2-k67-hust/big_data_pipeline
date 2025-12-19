@@ -1,5 +1,5 @@
 """
-Streamlit Dashboard for Big Data Pipeline Visualization
+Streamlit Dashboard for Football Match Data Visualization
 Real-time analytics and visualizations from Elasticsearch
 """
 import streamlit as st
@@ -9,11 +9,12 @@ import plotly.graph_objects as go
 from elasticsearch import Elasticsearch
 from datetime import datetime, timedelta
 import time
+import os
 
 # Page configuration
 st.set_page_config(
-    page_title="Big Data Analytics Dashboard",
-    page_icon="📊",
+    page_title="Football Data Analytics Dashboard",
+    page_icon="⚽",
     layout="wide"
 )
 
@@ -21,23 +22,19 @@ st.set_page_config(
 @st.cache_resource
 def get_es_connection():
     """Create Elasticsearch connection"""
-    import os
     es_host = os.getenv('ELASTICSEARCH_HOST', 'elasticsearch')
     es_port = int(os.getenv('ELASTICSEARCH_PORT', '9200'))
     return Elasticsearch([{'host': es_host, 'port': es_port, 'scheme': 'http'}])
 
-def fetch_recent_events(es, index='events', size=1000):
-    """Fetch recent events from Elasticsearch"""
+def fetch_data(es, index='football-matches', size=10000):
+    """Fetch data from Elasticsearch"""
     try:
+        # Fetch a larger dataset for historical analysis
         query = {
             "size": size,
-            "sort": [{"timestamp": {"order": "desc"}}],
+            "sort": [{"match_date": {"order": "desc"}}],
             "query": {
-                "range": {
-                    "timestamp": {
-                        "gte": "now-1h"
-                    }
-                }
+                "match_all": {}
             }
         }
         response = es.search(index=index, body=query)
@@ -48,147 +45,135 @@ def fetch_recent_events(es, index='events', size=1000):
         st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
-def fetch_aggregated_data(es, index='events-aggregated', size=500):
-    """Fetch aggregated data from Elasticsearch"""
-    try:
-        query = {
-            "size": size,
-            "sort": [{"window.start": {"order": "desc"}}]
-        }
-        response = es.search(index=index, body=query)
-        hits = response['hits']['hits']
-        data = [hit['_source'] for hit in hits]
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"Error fetching aggregated data: {e}")
-        return pd.DataFrame()
-
 def main():
     """Main dashboard function"""
-    st.title("📊 Big Data Analytics Dashboard")
+    st.title("⚽ Football Data Analytics Dashboard")
     st.markdown("Real-time analytics and visualization pipeline")
     
     # Sidebar
     st.sidebar.header("Dashboard Controls")
-    auto_refresh = st.sidebar.checkbox("Auto Refresh", value=True)
-    refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 10)
+    auto_refresh = st.sidebar.checkbox("Auto Refresh", value=False)
+    refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 30)
     
     # Connect to Elasticsearch
     es = get_es_connection()
     
-    # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Event Analysis", "Revenue Analysis", "Real-time Stream"])
-    
     # Fetch data
-    df = fetch_recent_events(es)
+    with st.spinner('Fetching data from Elasticsearch...'):
+        df = fetch_data(es)
     
     if df.empty:
-        st.warning("No data available. Make sure the pipeline is running.")
+        st.warning("No data available. Make sure the pipeline is running and data is being ingested.")
+        if auto_refresh:
+            time.sleep(refresh_interval)
+            st.rerun()
         return
+
+    # Ensure date column is datetime
+    if 'match_date' in df.columns:
+        df['match_date'] = pd.to_datetime(df['match_date'])
+    elif 'Date' in df.columns:
+        df['match_date'] = pd.to_datetime(df['Date'], errors='coerce')
+
+    # Create tabs for the requested visualizations
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Overview & Matches per Month", 
+        "Shots Analysis", 
+        "Goals Analysis", 
+        "Fouls vs Yellow Cards",
+        "Raw Data"
+    ])
     
-    # Overview Tab
+    # 1. Tổng quan về số các trận đấu theo từng tháng trong các năm
     with tab1:
-        st.header("System Overview")
+        st.header("1. Matches Overview by Month and Year")
+        st.markdown("Heatmap of matches per month over years.")
         
-        # Metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Events", len(df))
-        
-        with col2:
-            if 'revenue' in df.columns:
-                total_revenue = df['revenue'].sum()
-                st.metric("Total Revenue", f"${total_revenue:,.2f}")
-        
-        with col3:
-            if 'event_type' in df.columns:
-                unique_events = df['event_type'].nunique()
-                st.metric("Event Types", unique_events)
-        
-        with col4:
-            if 'region' in df.columns:
-                regions = df['region'].nunique()
-                st.metric("Regions", regions)
-        
-        # Event distribution over time
-        if 'timestamp' in df.columns:
-            st.subheader("Event Distribution Over Time")
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            time_series = df.set_index('timestamp').resample('1T').size()
-            fig = px.line(time_series, title="Events per Minute")
+        if 'match_date' in df.columns:
+            # Extract Month and Year if not present (though Spark should have added them)
+            if 'Year' not in df.columns:
+                df['Year'] = df['match_date'].dt.year
+            if 'Month' not in df.columns:
+                df['Month'] = df['match_date'].dt.month
+            
+            # Group by Year and Month
+            matches_per_month = df.groupby(['Year', 'Month']).size().reset_index(name='Count')
+            
+            # Pivot for heatmap
+            heatmap_data = matches_per_month.pivot(index='Month', columns='Year', values='Count')
+            
+            fig = px.imshow(heatmap_data, 
+                            labels=dict(x="Year", y="Month", color="Number of Matches"),
+                            x=heatmap_data.columns,
+                            y=heatmap_data.index,
+                            title="Heatmap of Matches per Month over Years",
+                            aspect="auto")
+            fig.update_yaxes(tickmode='linear', tick0=1, dtick=1)
             st.plotly_chart(fig, use_container_width=True)
-    
-    # Event Analysis Tab
+        else:
+            st.error("Date column not found for analysis.")
+
+    # 2. Số lượng cú sút và cú sút trúng đích của đội chủ nhà và đội khách theo ngày thi đấu
     with tab2:
-        st.header("Event Analysis")
+        st.header("2. Shots Analysis (Time Series)")
+        st.markdown("Time Series Analysis of Home/Away Shots (HS/AS) and Shots on Target (HST/AST).")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if 'event_type' in df.columns:
-                st.subheader("Events by Type")
-                event_counts = df['event_type'].value_counts()
-                fig = px.pie(values=event_counts.values, names=event_counts.index, 
-                           title="Event Type Distribution")
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            if 'region' in df.columns:
-                st.subheader("Events by Region")
-                region_counts = df['region'].value_counts()
-                fig = px.bar(x=region_counts.index, y=region_counts.values,
-                           labels={'x': 'Region', 'y': 'Count'},
-                           title="Events by Region")
-                st.plotly_chart(fig, use_container_width=True)
-        
-        if 'device' in df.columns:
-            st.subheader("Device Distribution")
-            device_counts = df['device'].value_counts()
-            fig = px.bar(x=device_counts.index, y=device_counts.values,
-                       labels={'x': 'Device', 'y': 'Count'},
-                       title="Events by Device")
+        if 'match_date' in df.columns:
+            # Aggregate by Date (sum or mean) - User suggested sum or mean if dense
+            # Let's use sum per day
+            daily_shots = df.groupby('match_date')[['HS', 'AS', 'HST', 'AST']].sum().reset_index()
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['HS'], mode='lines', name='Home Shots (HS)'))
+            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['AS'], mode='lines', name='Away Shots (AS)'))
+            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['HST'], mode='lines', name='Home Shots Target (HST)', line=dict(dash='dash')))
+            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['AST'], mode='lines', name='Away Shots Target (AST)', line=dict(dash='dash')))
+            
+            fig.update_layout(title='Daily Shots Statistics', xaxis_title='Date', yaxis_title='Count')
             st.plotly_chart(fig, use_container_width=True)
-    
-    # Revenue Analysis Tab
+        else:
+            st.error("Date column not found for analysis.")
+
+    # 3. Số bàn thắng trung bình được ghi của đội nhà và đội khách
     with tab3:
-        st.header("Revenue Analysis")
+        st.header("3. Average Goals Analysis")
+        st.markdown("Comparison of Average Home Goals (FTHG) vs Average Away Goals (FTAG).")
         
-        if 'revenue' in df.columns and 'region' in df.columns:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Revenue by Region")
-                revenue_by_region = df.groupby('region')['revenue'].sum().sort_values(ascending=False)
-                fig = px.bar(x=revenue_by_region.index, y=revenue_by_region.values,
-                           labels={'x': 'Region', 'y': 'Revenue ($)'},
-                           title="Total Revenue by Region")
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                st.subheader("Revenue by Event Type")
-                revenue_by_event = df.groupby('event_type')['revenue'].sum().sort_values(ascending=False)
-                fig = px.bar(x=revenue_by_event.index, y=revenue_by_event.values,
-                           labels={'x': 'Event Type', 'y': 'Revenue ($)'},
-                           title="Total Revenue by Event Type")
-                st.plotly_chart(fig, use_container_width=True)
+        avg_goals = df[['FTHG', 'FTAG']].mean().reset_index()
+        avg_goals.columns = ['Type', 'Average Goals']
+        # Rename for better display
+        avg_goals['Type'] = avg_goals['Type'].replace({'FTHG': 'Home Team Goals', 'FTAG': 'Away Team Goals'})
         
-        if 'price' in df.columns:
-            st.subheader("Price Distribution")
-            fig = px.histogram(df, x='price', nbins=50, title="Price Distribution")
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Real-time Stream Tab
+        fig = px.bar(avg_goals, x='Type', y='Average Goals', color='Type',
+                     title="Average Goals: Home vs Away",
+                     text_auto='.2f')
+        st.plotly_chart(fig, use_container_width=True)
+
+    # 4. Số lượt phạm lỗi trung bình của các đội theo số lượng thẻ vàng của đội chủ nhà
     with tab4:
-        st.header("Real-time Event Stream")
-        st.subheader("Latest Events")
+        st.header("4. Fouls vs Home Yellow Cards Analysis")
+        st.markdown("Average Fouls (HF/AF) grouped by Home Yellow Cards (HY).")
         
-        # Display recent events
-        display_cols = ['timestamp', 'user_id', 'event_type', 'product_id', 'price', 'quantity', 'region', 'device']
-        display_cols = [col for col in display_cols if col in df.columns]
-        st.dataframe(df[display_cols].head(50), use_container_width=True)
+        if 'HY' in df.columns and 'HF' in df.columns and 'AF' in df.columns:
+            fouls_by_hy = df.groupby('HY')[['HF', 'AF']].mean().reset_index()
+            
+            # Melt for easier plotting with Plotly Express
+            fouls_melted = fouls_by_hy.melt(id_vars=['HY'], value_vars=['HF', 'AF'], 
+                                            var_name='Foul Type', value_name='Average Fouls')
+            
+            fig = px.bar(fouls_melted, x='HY', y='Average Fouls', color='Foul Type', barmode='group',
+                         labels={'HY': 'Home Yellow Cards (HY)', 'Average Fouls': 'Mean Fouls'},
+                         title="Correlation between Home Yellow Cards and Average Fouls")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error("Required columns (HY, HF, AF) not found.")
+
+    # Raw Data Tab
+    with tab5:
+        st.header("Raw Data")
+        st.dataframe(df.head(100), use_container_width=True)
     
-    # Auto-refresh
+    # Auto-refresh logic
     if auto_refresh:
         time.sleep(refresh_interval)
         st.rerun()

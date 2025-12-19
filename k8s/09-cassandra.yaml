@@ -203,7 +203,7 @@ spec:
           name: cql
         resources:
           limits:
-            cpu: "500"
+            cpu: "500m"
             memory: 450Mi
           requests:
             cpu: "250m"
