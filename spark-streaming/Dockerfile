@@ -1,18 +1,25 @@
-FROM apache/spark:3.5.0
+# Sử dụng Base Image ổn định
+FROM apache/spark:3.3.3
 
 USER root
 
 WORKDIR /app
 
+# Cài đặt các thư viện Python từ requirements.txt
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ./src/
+# Copy toàn bộ source code
+COPY . /app
 
-ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-ENV KAFKA_TOPIC=data-stream
-ENV ELASTICSEARCH_NODES=elasticsearch
-ENV ELASTICSEARCH_INDEX=events
-ENV ELASTICSEARCH_AGG_INDEX=events-aggregated
+# Tạo thư mục cache và cấp quyền (Đoạn bạn vừa yêu cầu thêm)
+RUN mkdir -p /home/spark/.ivy2/cache && \
+    chmod -R 777 /home/spark/.ivy2
 
-CMD ["spark-submit", "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0,com.datastax.spark:spark-cassandra-connector_2.12:3.5.0", "src/streaming_app.py"]
+USER spark
+
+# Câu lệnh chạy Spark Streaming (Đã sửa tên file script thành src/streaming_app.py)
+CMD ["/opt/spark/bin/spark-submit", \
+     "--master", "local[*]", \
+     "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.3,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0", \
+     "src/streaming_app.py"]

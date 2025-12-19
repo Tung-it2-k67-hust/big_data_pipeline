@@ -3,7 +3,7 @@ from pyspark.sql.functions import (
     col, expr, when, lit, count,
     sum as spark_sum, avg,
     current_timestamp, to_date, from_json,
-    md5, concat_ws  # <-- Thêm 2 hàm này
+    md5, concat_ws, udf  # <-- Thêm 2 hàm này
 )
 from pyspark.sql.types import (
     StructType, StructField,
@@ -11,6 +11,7 @@ from pyspark.sql.types import (
 )
 import logging
 import os
+import uuid
 
 # --------------------------------------------------
 # Logging
@@ -40,10 +41,6 @@ def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
 
     spark.sparkContext.setLogLevel("WARN")
     logger.info(f"Spark session created. Connecting to ES nodes: {es_nodes}")
-    return spark
-
-    spark.sparkContext.setLogLevel("WARN")
-    logger.info("Spark session created with dual-sink support")
     return spark
 
 # --------------------------------------------------
@@ -80,6 +77,18 @@ def define_schema():
     ])
 
 # --------------------------------------------------
+# Helper Functions
+# --------------------------------------------------
+def format_uuid_string(uuid_str):
+    if uuid_str and len(uuid_str) == 32:
+        try:
+            # Thư viện uuid của Python sẽ tự động thêm gạch ngang khi in ra str()
+            return str(uuid.UUID(uuid_str)) 
+        except ValueError:
+            return None
+    return uuid_str # Trả về nguyên gốc nếu đã có format đúng hoặc null
+
+# --------------------------------------------------
 # Kafka Source
 # --------------------------------------------------
 def read_from_kafka(spark, servers, topic):
@@ -100,23 +109,26 @@ def process_stream(df, schema):
         from_json(col("json_payload"), schema).alias("data")
     ).select("data.*")
 
-    # 2. Thêm các cột tính toán
-    processed = parsed \
-        .withColumn("processing_ts", current_timestamp()) \
-        .withColumn("match_date", to_date(col("Date"), "dd/MM/yyyy")) \
-        .withColumn("totalgoals", col("FTHG") + col("FTAG")) \
-        .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0)) \
-        .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0)) \
+    # 2. Thêm các cột tính toán (DÙNG NGOẶC ĐƠN ĐỂ BAO QUANH)
+    processed = (parsed
+        .withColumn("processing_ts", current_timestamp())
+        .withColumn("match_date", to_date(col("Date"), "dd/MM/yyyy"))
+        .withColumn("totalgoals", col("FTHG") + col("FTAG"))
+        .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0))
+        .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0))
         .withColumn("drawflag", when(col("FTR") == "D", 1).otherwise(0))
+    )
 
-    # 3. QUAN TRỌNG: Chuyển TẤT CẢ tên cột thành chữ thường để khớp với Cassandra
-    # Điều này giải quyết lỗi "Columns not found"
+    # 3. Chuyển tên cột thành chữ thường
     final_df = processed.toDF(*[c.lower() for c in processed.columns])
     
-    # 4. Tạo match_id dựa trên các cột đã viết thường
-    from pyspark.sql.functions import md5, concat_ws
+    # 4. Tạo match_id
     final_df = final_df.withColumn("match_id", 
         md5(concat_ws("-", col("season"), col("hometeam"), col("awayteam"), col("date"))))
+
+    # 5. Format UUID
+    uuid_formatter = udf(format_uuid_string, StringType())
+    final_df = final_df.withColumn("match_id", uuid_formatter(col("match_id")))
 
     return final_df
 
@@ -125,13 +137,33 @@ def process_stream(df, schema):
 # --------------------------------------------------
 def write_to_cassandra(df, keyspace, table):
     def write_batch(batch_df, batch_id):
-        batch_df.write \
+        # Chọn đúng các cột có trong bảng Cassandra
+        # Map match_date (DateType) -> date (để khớp với kiểu DATE của Cassandra)
+        cassandra_df = batch_df.select(
+            col("season"), col("div"), 
+            col("match_date").alias("date"), 
+            col("hometeam"), col("awayteam"),
+            col("fthg"), col("ftag"), col("ftr"),
+            col("hthg"), col("htag"), col("htr"),
+            col("hs"), col("as"), col("hst"), col("ast"),
+            col("hf"), col("af"), col("hc"), col("ac"),
+            col("hy"), col("ay"), col("hr"), col("ar"),
+            col("psh"), col("psd"), col("psa"),
+            col("match_id")
+        )
+
+        # --- FIX: Filter null dates to prevent Cassandra write failure ---
+        # Cassandra Primary Key columns cannot be null
+        cassandra_df = cassandra_df.filter(col("date").isNotNull())
+        
+        cassandra_df.write \
             .format("org.apache.spark.sql.cassandra") \
             .mode("append") \
             .option("keyspace", keyspace) \
             .option("table", table) \
             .option("spark.cassandra.connection.host", os.getenv("CASSANDRA_HOST", "cassandra")) \
             .save()
+            
     # Thêm query name để dễ quản lý trong Spark UI
     return df.writeStream.queryName(f"Writer_{table}") \
              .foreachBatch(write_batch).outputMode("append").start()

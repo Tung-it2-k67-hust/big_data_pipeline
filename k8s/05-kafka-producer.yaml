@@ -31,7 +31,7 @@ spec:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka:9092"
             - name: KAFKA_TOPIC
-              value: "data-stream"
+              value: "football-stream"
             - name: PRODUCER_INTERVAL
               value: "1"
             - name: CSV_FILE_PATH
