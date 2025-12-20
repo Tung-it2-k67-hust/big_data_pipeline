@@ -50,7 +50,7 @@ services:
       - bigdata-network
     volumes:
       - cassandra-data:/var/lib/cassandra
-      - ./cassandra/init-schema.cql:/docker-entrypoint-initdb.d/init-schema.cql
+      - ./cassandra/init.cql:/docker-entrypoint-initdb.d/init.cql
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
       interval: 30s
@@ -118,7 +118,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: data-stream
       ELASTICSEARCH_NODES: elasticsearch
-      ELASTICSEARCH_INDEX: events
+      ELASTICSEARCH_INDEX: football-matches
       ELASTICSEARCH_AGG_INDEX: events-aggregated
       CASSANDRA_HOST: cassandra
       CASSANDRA_PORT: 9042

@@ -1,8 +1,8 @@
 -- Keyspace lưu trữ dữ liệu thống kê bóng đá
 CREATE KEYSPACE IF NOT EXISTS football_stats
 WITH replication = {
-    'class': 'NetworkTopologyStrategy',
-    'datacenter1': 3
+    'class': 'SimpleStrategy',
+    'replication_factor': 1
 };
 
 USE football_stats;

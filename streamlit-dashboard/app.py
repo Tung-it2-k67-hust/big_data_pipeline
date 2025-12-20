@@ -75,100 +75,144 @@ def main():
     elif 'Date' in df.columns:
         df['match_date'] = pd.to_datetime(df['Date'], errors='coerce')
 
+    # Ensure numeric columns exist (fill with 0 if missing)
+    # Added: hc, ac (corners), hr, ar (red cards), psh, psd, psa (odds)
+    numeric_cols = [
+        'hs', 'as', 'hst', 'ast', 'fthg', 'ftag', 
+        'hy', 'ay', 'hf', 'af', 'hc', 'ac', 'hr', 'ar',
+        'psh', 'psd', 'psa'
+    ]
+    for col in numeric_cols:
+        if col not in df.columns:
+            df[col] = 0
+        else:
+            df[col] = df[col].fillna(0)
+
     # Create tabs for the requested visualizations
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Overview & Matches per Month", 
-        "Shots Analysis", 
-        "Goals Analysis", 
-        "Fouls vs Yellow Cards",
+        "Overview & Results", 
+        "Attack Stats (Shots/Corners)", 
+        "Discipline (Fouls/Cards)", 
+        "Betting Market",
         "Raw Data"
     ])
     
-    # 1. Tổng quan về số các trận đấu theo từng tháng trong các năm
+    # --- TAB 1: OVERVIEW & RESULTS ---
     with tab1:
-        st.header("1. Matches Overview by Month and Year")
-        st.markdown("Heatmap of matches per month over years.")
+        col1, col2 = st.columns(2)
         
-        if 'match_date' in df.columns:
-            # Extract Month and Year if not present (though Spark should have added them)
-            if 'Year' not in df.columns:
-                df['Year'] = df['match_date'].dt.year
-            if 'Month' not in df.columns:
-                df['Month'] = df['match_date'].dt.month
-            
-            # Group by Year and Month
-            matches_per_month = df.groupby(['Year', 'Month']).size().reset_index(name='Count')
-            
-            # Pivot for heatmap
-            heatmap_data = matches_per_month.pivot(index='Month', columns='Year', values='Count')
-            
-            fig = px.imshow(heatmap_data, 
-                            labels=dict(x="Year", y="Month", color="Number of Matches"),
-                            x=heatmap_data.columns,
-                            y=heatmap_data.index,
-                            title="Heatmap of Matches per Month over Years",
-                            aspect="auto")
-            fig.update_yaxes(tickmode='linear', tick0=1, dtick=1)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.error("Date column not found for analysis.")
+        with col1:
+            st.subheader("Matches per Month (Heatmap)")
+            if 'match_date' in df.columns:
+                if 'Year' not in df.columns:
+                    df['Year'] = df['match_date'].dt.year
+                if 'Month' not in df.columns:
+                    df['Month'] = df['match_date'].dt.month
+                
+                matches_per_month = df.groupby(['Year', 'Month']).size().reset_index(name='Count')
+                heatmap_data = matches_per_month.pivot(index='Month', columns='Year', values='Count')
+                
+                fig_heat = px.imshow(heatmap_data, 
+                                labels=dict(x="Year", y="Month", color="Matches"),
+                                aspect="auto", color_continuous_scale="Viridis")
+                fig_heat.update_yaxes(tickmode='linear', tick0=1, dtick=1)
+                st.plotly_chart(fig_heat, use_container_width=True)
 
-    # 2. Số lượng cú sút và cú sút trúng đích của đội chủ nhà và đội khách theo ngày thi đấu
+        with col2:
+            st.subheader("Match Result Distribution")
+            if 'ftr' in df.columns:
+                ftr_counts = df['ftr'].value_counts().reset_index()
+                ftr_counts.columns = ['Result', 'Count']
+                # Map codes to names
+                ftr_counts['Result Name'] = ftr_counts['Result'].map({'H': 'Home Win', 'A': 'Away Win', 'D': 'Draw'})
+                
+                fig_pie = px.pie(ftr_counts, values='Count', names='Result Name', 
+                             color='Result Name',
+                             color_discrete_map={'Home Win':'#1f77b4', 'Away Win':'#ff7f0e', 'Draw':'#2ca02c'})
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+    # --- TAB 2: ATTACK STATS ---
     with tab2:
-        st.header("2. Shots Analysis (Time Series)")
-        st.markdown("Time Series Analysis of Home/Away Shots (HS/AS) and Shots on Target (HST/AST).")
-        
+        st.subheader("Daily Shots Activity")
         if 'match_date' in df.columns:
-            # Aggregate by Date (sum or mean) - User suggested sum or mean if dense
-            # Let's use sum per day
-            daily_shots = df.groupby('match_date')[['HS', 'AS', 'HST', 'AST']].sum().reset_index()
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['HS'], mode='lines', name='Home Shots (HS)'))
-            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['AS'], mode='lines', name='Away Shots (AS)'))
-            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['HST'], mode='lines', name='Home Shots Target (HST)', line=dict(dash='dash')))
-            fig.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['AST'], mode='lines', name='Away Shots Target (AST)', line=dict(dash='dash')))
-            
-            fig.update_layout(title='Daily Shots Statistics', xaxis_title='Date', yaxis_title='Count')
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.error("Date column not found for analysis.")
+            daily_shots = df.groupby('match_date')[['hs', 'as', 'hst', 'ast']].sum().reset_index()
+            fig_shots = go.Figure()
+            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['hs'], mode='lines', name='Home Shots'))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['as'], mode='lines', name='Away Shots'))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['hst'], mode='lines', name='Home On Target', line=dict(dash='dot')))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['ast'], mode='lines', name='Away On Target', line=dict(dash='dot')))
+            fig_shots.update_layout(xaxis_title='Date', yaxis_title='Count', hovermode="x unified")
+            st.plotly_chart(fig_shots, use_container_width=True)
 
-    # 3. Số bàn thắng trung bình được ghi của đội nhà và đội khách
+        st.divider()
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.subheader("Average Goals: Home vs Away")
+            avg_goals = df[['fthg', 'ftag']].mean().reset_index()
+            avg_goals.columns = ['Type', 'Average']
+            avg_goals['Type'] = avg_goals['Type'].replace({'fthg': 'Home Goals', 'ftag': 'Away Goals'})
+            fig_goals = px.bar(avg_goals, x='Type', y='Average', color='Type', text_auto='.2f')
+            st.plotly_chart(fig_goals, use_container_width=True)
+            
+        with col_c2:
+            st.subheader("Average Corners: Home vs Away")
+            if 'hc' in df.columns and 'ac' in df.columns:
+                avg_corners = df[['hc', 'ac']].mean().reset_index()
+                avg_corners.columns = ['Type', 'Average']
+                avg_corners['Type'] = avg_corners['Type'].replace({'hc': 'Home Corners', 'ac': 'Away Corners'})
+                fig_corners = px.bar(avg_corners, x='Type', y='Average', color='Type', text_auto='.2f',
+                                     color_discrete_sequence=['#9467bd', '#8c564b'])
+                st.plotly_chart(fig_corners, use_container_width=True)
+
+    # --- TAB 3: DISCIPLINE ---
     with tab3:
-        st.header("3. Average Goals Analysis")
-        st.markdown("Comparison of Average Home Goals (FTHG) vs Average Away Goals (FTAG).")
-        
-        avg_goals = df[['FTHG', 'FTAG']].mean().reset_index()
-        avg_goals.columns = ['Type', 'Average Goals']
-        # Rename for better display
-        avg_goals['Type'] = avg_goals['Type'].replace({'FTHG': 'Home Team Goals', 'FTAG': 'Away Team Goals'})
-        
-        fig = px.bar(avg_goals, x='Type', y='Average Goals', color='Type',
-                     title="Average Goals: Home vs Away",
-                     text_auto='.2f')
-        st.plotly_chart(fig, use_container_width=True)
-
-    # 4. Số lượt phạm lỗi trung bình của các đội theo số lượng thẻ vàng của đội chủ nhà
-    with tab4:
-        st.header("4. Fouls vs Home Yellow Cards Analysis")
-        st.markdown("Average Fouls (HF/AF) grouped by Home Yellow Cards (HY).")
-        
-        if 'HY' in df.columns and 'HF' in df.columns and 'AF' in df.columns:
-            fouls_by_hy = df.groupby('HY')[['HF', 'AF']].mean().reset_index()
-            
-            # Melt for easier plotting with Plotly Express
-            fouls_melted = fouls_by_hy.melt(id_vars=['HY'], value_vars=['HF', 'AF'], 
+        st.subheader("Fouls vs Yellow Cards Correlation")
+        if 'hy' in df.columns and 'hf' in df.columns and 'af' in df.columns:
+            fouls_by_hy = df.groupby('hy')[['hf', 'af']].mean().reset_index()
+            fouls_melted = fouls_by_hy.melt(id_vars=['hy'], value_vars=['hf', 'af'], 
                                             var_name='Foul Type', value_name='Average Fouls')
+            fig_fouls = px.bar(fouls_melted, x='hy', y='Average Fouls', color='Foul Type', barmode='group',
+                         labels={'hy': 'Home Yellow Cards', 'Average Fouls': 'Mean Fouls'})
+            st.plotly_chart(fig_fouls, use_container_width=True)
             
-            fig = px.bar(fouls_melted, x='HY', y='Average Fouls', color='Foul Type', barmode='group',
-                         labels={'HY': 'Home Yellow Cards (HY)', 'Average Fouls': 'Mean Fouls'},
-                         title="Correlation between Home Yellow Cards and Average Fouls")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.error("Required columns (HY, HF, AF) not found.")
+        st.divider()
+        st.subheader("Red Cards Analysis")
+        if 'hr' in df.columns and 'ar' in df.columns:
+            # Sum of red cards over time (cumulative or total) - Let's show total distribution
+            total_reds = df[['hr', 'ar']].sum().reset_index()
+            total_reds.columns = ['Type', 'Total Count']
+            total_reds['Type'] = total_reds['Type'].replace({'hr': 'Home Red Cards', 'ar': 'Away Red Cards'})
+            fig_reds = px.pie(total_reds, values='Total Count', names='Type', 
+                              title="Total Red Cards Distribution", hole=0.4,
+                              color_discrete_sequence=['#d62728', '#ff9896'])
+            st.plotly_chart(fig_reds, use_container_width=True)
 
-    # Raw Data Tab
+    # --- TAB 4: BETTING MARKET ---
+    with tab4:
+        st.subheader("Betting Odds Trends (Pinnacle)")
+        st.markdown("Average daily odds for Home Win (PSH), Draw (PSD), and Away Win (PSA).")
+        
+        if 'psh' in df.columns and 'match_date' in df.columns:
+            # Filter out 0 values which might be missing data
+            odds_df = df[(df['psh'] > 0) & (df['psd'] > 0) & (df['psa'] > 0)]
+            
+            if not odds_df.empty:
+                daily_odds = odds_df.groupby('match_date')[['psh', 'psd', 'psa']].mean().reset_index()
+                
+                fig_odds = go.Figure()
+                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psh'], name='Home Win Odds (PSH)'))
+                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psd'], name='Draw Odds (PSD)'))
+                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psa'], name='Away Win Odds (PSA)'))
+                
+                fig_odds.update_layout(xaxis_title='Date', yaxis_title='Average Odds', hovermode="x unified")
+                st.plotly_chart(fig_odds, use_container_width=True)
+            else:
+                st.info("No betting odds data available to plot.")
+        else:
+            st.error("Betting odds columns (PSH, PSD, PSA) not found.")
+
+    # --- TAB 5: RAW DATA ---
     with tab5:
         st.header("Raw Data")
         st.dataframe(df.head(100), use_container_width=True)

@@ -29,8 +29,8 @@ def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
     spark = SparkSession.builder \
         .appName(app_name) \
         .config("spark.jars.packages", 
-                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
-                "com.datastax.spark:spark-cassandra-connector_2.12:3.5.0,"
+                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.3,"
+                "com.datastax.spark:spark-cassandra-connector_2.12:3.3.0,"
                 "org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0") \
         .config("spark.sql.shuffle.partitions", "4") \
         .config("spark.es.nodes", es_nodes) \
@@ -112,7 +112,7 @@ def process_stream(df, schema):
     # 2. Thêm các cột tính toán (DÙNG NGOẶC ĐƠN ĐỂ BAO QUANH)
     processed = (parsed
         .withColumn("processing_ts", current_timestamp())
-        .withColumn("match_date", to_date(col("Date"), "dd/MM/yyyy"))
+        .withColumn("match_date", to_date(col("Date"), "yyyy-MM-dd"))
         .withColumn("totalgoals", col("FTHG") + col("FTAG"))
         .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0))
         .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0))
