@@ -5,7 +5,7 @@ metadata:
   name: streamlit
   namespace: big-data-pipeline
 spec:
-  type: LoadBalancer
+  type: NodePort
   ports:
     - port: 8501
       targetPort: 8501
