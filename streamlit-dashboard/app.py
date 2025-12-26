@@ -24,23 +24,40 @@ def get_es_connection():
     """Create Elasticsearch connection"""
     es_host = os.getenv('ELASTICSEARCH_HOST', 'elasticsearch')
     es_port = int(os.getenv('ELASTICSEARCH_PORT', '9200'))
-    return Elasticsearch([{'host': es_host, 'port': es_port, 'scheme': 'http'}])
+    # Increase timeout to 60s to handle large data fetches
+    return Elasticsearch([{'host': es_host, 'port': es_port, 'scheme': 'http'}], request_timeout=60)
 
-def fetch_data(es, index='football-matches', size=10000):
-    """Fetch data from Elasticsearch"""
+def fetch_data(es, index='football-matches', max_size=1000):
+    """
+    Fetch data from Elasticsearch
+    Reduced default max_size to 1000 to avoid timeouts with 4M+ documents.
+    """
     try:
-        # Fetch a larger dataset for historical analysis
+        # First, get the total count with timeout
+        count_response = es.count(index=index, body={"query": {"match_all": {}}}, request_timeout=30)
+        total_docs = count_response['count']
+        
+        # Fetch up to max_size
+        fetch_size = min(total_docs, max_size)
+        
         query = {
-            "size": size,
+            "size": fetch_size,
             "sort": [{"match_date": {"order": "desc"}}],
             "query": {
                 "match_all": {}
             }
         }
-        response = es.search(index=index, body=query)
+        
+        response = es.search(index=index, body=query, request_timeout=60)
         hits = response['hits']['hits']
         data = [hit['_source'] for hit in hits]
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        
+        # Add metadata about total available records
+        df.attrs['total_in_es'] = total_docs
+        df.attrs['fetched'] = len(df)
+        
+        return df
     except Exception as e:
         st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
@@ -86,7 +103,8 @@ def main():
         if col not in df.columns:
             df[col] = 0
         else:
-            df[col] = df[col].fillna(0)
+            # Force conversion to numeric, coercing errors to NaN then filling with 0
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     # Create tabs for the requested visualizations
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -99,37 +117,17 @@ def main():
     
     # --- TAB 1: OVERVIEW & RESULTS ---
     with tab1:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Matches per Month (Heatmap)")
-            if 'match_date' in df.columns:
-                if 'Year' not in df.columns:
-                    df['Year'] = df['match_date'].dt.year
-                if 'Month' not in df.columns:
-                    df['Month'] = df['match_date'].dt.month
-                
-                matches_per_month = df.groupby(['Year', 'Month']).size().reset_index(name='Count')
-                heatmap_data = matches_per_month.pivot(index='Month', columns='Year', values='Count')
-                
-                fig_heat = px.imshow(heatmap_data, 
-                                labels=dict(x="Year", y="Month", color="Matches"),
-                                aspect="auto", color_continuous_scale="Viridis")
-                fig_heat.update_yaxes(tickmode='linear', tick0=1, dtick=1)
-                st.plotly_chart(fig_heat, use_container_width=True)
-
-        with col2:
-            st.subheader("Match Result Distribution")
-            if 'ftr' in df.columns:
-                ftr_counts = df['ftr'].value_counts().reset_index()
-                ftr_counts.columns = ['Result', 'Count']
-                # Map codes to names
-                ftr_counts['Result Name'] = ftr_counts['Result'].map({'H': 'Home Win', 'A': 'Away Win', 'D': 'Draw'})
-                
-                fig_pie = px.pie(ftr_counts, values='Count', names='Result Name', 
-                             color='Result Name',
-                             color_discrete_map={'Home Win':'#1f77b4', 'Away Win':'#ff7f0e', 'Draw':'#2ca02c'})
-                st.plotly_chart(fig_pie, use_container_width=True)
+        st.subheader("Match Result Distribution")
+        if 'ftr' in df.columns:
+            ftr_counts = df['ftr'].value_counts().reset_index()
+            ftr_counts.columns = ['Result', 'Count']
+            # Map codes to names
+            ftr_counts['Result Name'] = ftr_counts['Result'].map({'H': 'Home Win', 'A': 'Away Win', 'D': 'Draw'})
+            
+            fig_pie = px.pie(ftr_counts, values='Count', names='Result Name', 
+                         color='Result Name',
+                         color_discrete_map={'Home Win':'#1f77b4', 'Away Win':'#ff7f0e', 'Draw':'#2ca02c'})
+            st.plotly_chart(fig_pie, use_container_width=True)
 
     # --- TAB 2: ATTACK STATS ---
     with tab2:
@@ -215,7 +213,32 @@ def main():
     # --- TAB 5: RAW DATA ---
     with tab5:
         st.header("Raw Data")
-        st.dataframe(df.head(100), use_container_width=True)
+        
+        # Show total records with clarification
+        total_in_es = df.attrs.get('total_in_es', len(df))
+        fetched = len(df)
+        
+        if total_in_es > fetched:
+            st.info(f"📊 **Total Records in Elasticsearch:** {total_in_es:,} | **Displayed:** {fetched:,} (Elasticsearch query limit)")
+            st.caption("💡 Note: Elasticsearch has a default limit of 10,000 documents per query. All data is stored, but only the most recent 10,000 are shown here for performance.")
+        else:
+            st.write(f"**Total Records:** {len(df):,}")
+        
+        # Add pagination controls
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            page_size = st.selectbox("Rows per page", [50, 100, 200, 500, 1000], index=1)
+        with col2:
+            total_pages = (len(df) - 1) // page_size + 1
+            page_number = st.number_input(f"Page (1-{total_pages})", min_value=1, max_value=total_pages, value=1)
+        
+        # Calculate start and end indices
+        start_idx = (page_number - 1) * page_size
+        end_idx = min(start_idx + page_size, len(df))
+        
+        # Display paginated data
+        st.write(f"Showing records {start_idx + 1} to {end_idx} of {len(df):,}")
+        st.dataframe(df.iloc[start_idx:end_idx], use_container_width=True, height=600)
     
     # Auto-refresh logic
     if auto_refresh:

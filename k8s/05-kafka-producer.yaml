@@ -32,8 +32,10 @@ spec:
               value: "kafka:9092"
             - name: KAFKA_TOPIC
               value: "football-stream"
-            - name: PRODUCER_INTERVAL
-              value: "1"
+            - name: BATCH_SIZE
+              value: "500"
+            - name: SLEEP_TIME
+              value: "0.3"
             - name: CSV_FILE_PATH
               value: "/app/data/full_dataset.csv"
             - name: PRODUCER_LOOP

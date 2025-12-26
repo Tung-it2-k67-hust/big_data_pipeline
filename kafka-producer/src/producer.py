@@ -209,16 +209,20 @@ class FootballDataProducer:
             logger.error(f"Failed to send message: {e}")
             return False
     
-    def run(self, interval=1, loop=False):
+    def run(self, batch_size=500, sleep_time=0.3, loop=False):
         """
-        Run the producer
+        Start sending messages to Kafka in burst batches (simulated realtime streaming)
         
         Args:
-            interval (float): Interval between messages in seconds
-            loop (bool): If True, loop through CSV file continuously
+            batch_size (int): Number of messages to send in each burst batch
+            sleep_time (float): Time to pause between batches (seconds)
+            loop (bool): Whether to loop through the CSV file continuously
         """
-        logger.info("Starting football data production...")
+        logger.info("Starting simulated realtime producer with burst batches...")
+        logger.info(f"Configuration: batch_size={batch_size}, sleep_time={sleep_time}s, loop={loop}")
+        
         message_count = 0
+        batch_count = 0
         
         try:
             while True:
@@ -226,25 +230,40 @@ class FootballDataProducer:
                     # Create a key from match info for partitioning
                     key = f"{match_data.get('Date', '')}_{match_data.get('HomeTeam', '')}_{match_data.get('AwayTeam', '')}"
                     
-                    if self.send_message(key, match_data):
-                        message_count += 1
-                        # Log first message and every 100th message
-                        if message_count == 1:
-                            logger.info(f"✓ First message sent successfully! (Match: {match_data.get('HomeTeam')} vs {match_data.get('AwayTeam')})")
-                        else:
-                            logger.info(f"✓ Sent message {message_count} (Match: {match_data.get('HomeTeam')} vs {match_data.get('AwayTeam')})")
-                       
-                    else:
-                        logger.warning(f"✗ Failed to send message {message_count + 1}")
+                    # Send async (no waiting for acknowledgment within batch)
+                    self.producer.send(self.topic, key=key, value=match_data)
+                    message_count += 1
                     
-                    time.sleep(interval)
+                    # Every batch_size messages
+                    if message_count % batch_size == 0:
+                        batch_count += 1
+                        
+                        # Flush to push batch to broker
+                        self.producer.flush()
+                        
+                        logger.info(
+                            f"📦 Batch {batch_count} sent "
+                            f"({message_count} messages total) - "
+                            f"Last: {match_data.get('HomeTeam')} vs {match_data.get('AwayTeam')}"
+                        )
+                        
+                        # Pause to simulate realtime streaming with burst pattern
+                        time.sleep(sleep_time)
+                
+                # Final flush for remaining messages
+                if message_count % batch_size != 0:
+                    self.producer.flush()
+                    batch_count += 1
+                    logger.info(f"📦 Final batch {batch_count} sent (total: {message_count} messages)")
                 
                 if not loop:
-                    logger.info(f"✓ Finished sending all {message_count} messages")
+                    logger.info(f"✅ Finished sending all {message_count} messages in {batch_count} batches")
+                    logger.info("All data has been sent. Producer will exit gracefully.")
                     break
                 else:
-                    logger.info("Looping back to start of CSV file...")
+                    logger.info("🔄 Looping back to start of CSV file...")
                     message_count = 0
+                    batch_count = 0
                     
         except KeyboardInterrupt:
             logger.info("Shutting down producer...")
@@ -262,7 +281,8 @@ def main():
     
     bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
     topic = os.getenv('KAFKA_TOPIC', 'data-stream')
-    interval = float(os.getenv('PRODUCER_INTERVAL', '1'))
+    batch_size = int(os.getenv('BATCH_SIZE', '500'))
+    sleep_time = float(os.getenv('SLEEP_TIME', '0.3'))
     csv_file_path = os.getenv('CSV_FILE_PATH')
     loop = os.getenv('PRODUCER_LOOP', 'false').lower() == 'true'
     
@@ -272,7 +292,7 @@ def main():
             topic=topic,
             csv_file_path=csv_file_path
         )
-        producer.run(interval=interval, loop=loop)
+        producer.run(batch_size=batch_size, sleep_time=sleep_time, loop=loop)
     except FileNotFoundError as e:
         logger.error(f"CSV file not found: {e}")
         logger.error("Please set CSV_FILE_PATH environment variable or place file in archive/ directory")

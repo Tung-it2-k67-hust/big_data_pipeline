@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, expr, when, lit, count,
     sum as spark_sum, avg,
-    current_timestamp, to_date, from_json,
+    current_timestamp, to_date, to_timestamp, from_json,
     md5, concat_ws, udf  # <-- Thêm 2 hàm này
 )
 from pyspark.sql.types import (
@@ -112,7 +112,7 @@ def process_stream(df, schema):
     # 2. Thêm các cột tính toán (DÙNG NGOẶC ĐƠN ĐỂ BAO QUANH)
     processed = (parsed
         .withColumn("processing_ts", current_timestamp())
-        .withColumn("match_date", to_date(col("Date"), "yyyy-MM-dd"))
+        .withColumn("match_date", to_timestamp(col("Date"), "yyyy-MM-dd"))
         .withColumn("totalgoals", col("FTHG") + col("FTAG"))
         .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0))
         .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0))
