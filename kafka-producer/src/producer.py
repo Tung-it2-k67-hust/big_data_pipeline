@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class FootballDataProducer:
     """Producer class for reading CSV and sending football match data to Kafka"""
     
-    def __init__(self, bootstrap_servers=None, topic='data-stream', csv_file_path=None):
+    def __init__(self, bootstrap_servers=None, topic='football-stream', csv_file_path=None):
         """
         Initialize Kafka producer
         
@@ -37,23 +37,36 @@ class FootballDataProducer:
         
         logger.info(f"Connecting to Kafka at: {bootstrap_servers}")
         
-        # Initialize Kafka producer
-        self.producer = KafkaProducer(
-            bootstrap_servers=bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-            key_serializer=lambda k: k.encode('utf-8') if k else None,
-            # Add retry and timeout configurations
-            retries=3,
-            acks='all',  # Wait for all replicas to acknowledge
-            max_in_flight_requests_per_connection=1,  # Ensure ordering
-            enable_idempotence=True,  # Ensure exactly-once semantics
-            # Wait for metadata to be available
-            metadata_max_age_ms=30000,
-            # Increase timeout for topic creation
-            request_timeout_ms=30000,
-            # Retry on topic not available
-            retry_backoff_ms=1000
-        )
+        # Initialize Kafka producer with retry logic
+        max_retries = 10
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                self.producer = KafkaProducer(
+                    bootstrap_servers=bootstrap_servers,
+                    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                    key_serializer=lambda k: k.encode('utf-8') if k else None,
+                    # Add retry and timeout configurations
+                    retries=3,
+                    acks='all',  # Wait for all replicas to acknowledge
+                    max_in_flight_requests_per_connection=1,  # Ensure ordering
+                    enable_idempotence=True,  # Ensure exactly-once semantics
+                    metadata_max_age_ms=30000,
+                    # Increase timeout for topic creation
+                    request_timeout_ms=30000,
+                    # Retry on topic not available
+                    retry_backoff_ms=1000
+                )
+                logger.info("Successfully connected to Kafka")
+                break
+            except KafkaError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Failed to connect to Kafka (attempt {attempt+1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"Failed to connect to Kafka after {max_retries} attempts")
+                    raise e
         logger.info(f"Kafka Producer initialized for topic: {topic}")
         logger.info(f"CSV file path: {self.csv_file_path}")
         # Topic will be auto-created when first message is sent
@@ -280,7 +293,7 @@ def main():
     import os
     
     bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-    topic = os.getenv('KAFKA_TOPIC', 'data-stream')
+    topic = os.getenv('KAFKA_TOPIC', 'football-stream')
     batch_size = int(os.getenv('BATCH_SIZE', '500'))
     sleep_time = float(os.getenv('SLEEP_TIME', '0.3'))
     csv_file_path = os.getenv('CSV_FILE_PATH')

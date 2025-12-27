@@ -3,7 +3,7 @@ from pyspark.sql.functions import (
     col, expr, when, lit, count,
     sum as spark_sum, avg,
     current_timestamp, to_date, to_timestamp, from_json,
-    md5, concat_ws, udf  # <-- Thêm 2 hàm này
+    md5, concat_ws, udf, from_utc_timestamp, coalesce  # <-- Thêm hàm này
 )
 from pyspark.sql.types import (
     StructType, StructField,
@@ -12,6 +12,7 @@ from pyspark.sql.types import (
 import logging
 import os
 import uuid
+import time
 
 # --------------------------------------------------
 # Logging
@@ -37,6 +38,10 @@ def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
         .config("spark.es.port", "9200") \
         .config("spark.es.nodes.wan.only", "true") \
         .config("spark.es.index.auto.create", "true") \
+        .config("spark.streaming.stopGracefullyOnShutdown", "true") \
+        .config("spark.driver.bindAddress", "0.0.0.0") \
+        .config("spark.ui.port", "4040") \
+        .config("spark.kafka.consumer.cache.enabled", "false") \
         .getOrCreate()
 
     spark.sparkContext.setLogLevel("WARN")
@@ -97,6 +102,9 @@ def read_from_kafka(spark, servers, topic):
         .option("kafka.bootstrap.servers", servers) \
         .option("subscribe", topic) \
         .option("startingOffsets", "earliest") \
+        .option("failOnDataLoss", "false") \
+        .option("kafka.request.timeout.ms", "60000") \
+        .option("kafka.session.timeout.ms", "30000") \
         .load()
 
 # --------------------------------------------------
@@ -111,8 +119,7 @@ def process_stream(df, schema):
 
     # 2. Thêm các cột tính toán (DÙNG NGOẶC ĐƠN ĐỂ BAO QUANH)
     processed = (parsed
-        .withColumn("processing_ts", current_timestamp())
-        .withColumn("match_date", to_timestamp(col("Date"), "yyyy-MM-dd"))
+        .withColumn("processing_ts", from_utc_timestamp(current_timestamp(), "Asia/Ho_Chi_Minh"))
         .withColumn("totalgoals", col("FTHG") + col("FTAG"))
         .withColumn("homewinflag", when(col("FTR") == "H", 1).otherwise(0))
         .withColumn("awaywinflag", when(col("FTR") == "A", 1).otherwise(0))
@@ -138,10 +145,10 @@ def process_stream(df, schema):
 def write_to_cassandra(df, keyspace, table):
     def write_batch(batch_df, batch_id):
         # Chọn đúng các cột có trong bảng Cassandra
-        # Map match_date (DateType) -> date (để khớp với kiểu DATE của Cassandra)
+        # Convert Date string to proper date format for Cassandra
         cassandra_df = batch_df.select(
             col("season"), col("div"), 
-            col("match_date").alias("date"), 
+            to_date(col("date"), "yyyy-MM-dd").alias("date"), 
             col("hometeam"), col("awayteam"),
             col("fthg"), col("ftag"), col("ftr"),
             col("hthg"), col("htag"), col("htr"),
@@ -180,26 +187,33 @@ def write_to_elasticsearch(df, index_name):
 # Main
 # --------------------------------------------------
 def main():
-    spark = create_spark_session()
-    schema = define_schema()
+    try:
+        spark = create_spark_session()
+        schema = define_schema()
 
-    # Lấy cấu hình từ env để khớp với file 06-spark-streaming.yaml
-    kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-    # Đảm bảo topic khớp với Producer (football-stream)
-    kafka_topic = os.getenv("KAFKA_TOPIC", "football-stream")
-    # Đảm bảo index khớp với Dashboard (football-matches)
-    es_index = os.getenv("ELASTICSEARCH_INDEX", "football-matches")
+        # Lấy cấu hình từ env để khớp với file 06-spark-streaming.yaml
+        kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+        # Đảm bảo topic khớp với Producer (football-stream)
+        kafka_topic = os.getenv("KAFKA_TOPIC", "football-stream")
+        # Đảm bảo index khớp với Dashboard (football-matches)
+        es_index = os.getenv("ELASTICSEARCH_INDEX", "football-matches")
 
-    logger.info(f"Starting stream from {kafka_bootstrap} topic {kafka_topic}")
+        logger.info(f"Starting stream from {kafka_bootstrap} topic {kafka_topic}")
 
-    kafka_df = read_from_kafka(spark, kafka_bootstrap, kafka_topic)
-    processed = process_stream(kafka_df, schema)
+        kafka_df = read_from_kafka(spark, kafka_bootstrap, kafka_topic)
+        processed = process_stream(kafka_df, schema)
 
-    # Ghi song song
-    q1 = write_to_cassandra(processed, "football_stats", "matches")
-    q_es = write_to_elasticsearch(processed, es_index)
+        # Ghi song song
+        q1 = write_to_cassandra(processed, "football_stats", "matches")
+        q_es = write_to_elasticsearch(processed, es_index)
 
-    spark.streams.awaitAnyTermination()
+        spark.streams.awaitAnyTermination()
+    except Exception as e:
+        logger.error("❌ CRITICAL ERROR: Spark App Crashed!")
+        logger.error(str(e))
+        # Giữ container sống để xem log và UI (nếu UI đã lên)
+        while True:
+            time.sleep(60)
 
 if __name__ == "__main__":
     main()

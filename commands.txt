@@ -1,0 +1,26 @@
+# Commands to fix Elasticsearch issue
+
+# 1. Apply the updated Elasticsearch configuration with increased resources.
+# This command will update the Elasticsearch statefulset in your Kubernetes cluster.
+# It will trigger a rolling restart of the Elasticsearch pod with more memory.
+kubectl apply -f k8s/03-elasticsearch.yaml
+
+# 2. Wait for the Elasticsearch pod to restart and become ready.
+# This command will wait for the new Elasticsearch pod to be in a 'Ready' state.
+# The timeout is set to 5 minutes (300 seconds).
+echo "Waiting for Elasticsearch to be ready... (This might take a few minutes)"
+kubectl wait --for=condition=ready pod -l app=elasticsearch -n big-data-pipeline --timeout=300s
+
+# 3. Check the status of all pods in the namespace.
+# You should see the elasticsearch pod in a 'Running' state.
+kubectl get pods -n big-data-pipeline
+
+# 4. Check the logs of the new Elasticsearch pod.
+# This will help verify that it started correctly without any memory-related errors.
+# First, get the new pod name:
+export ES_POD=$(kubectl get pods -n big-data-pipeline -l app=elasticsearch -o custom-columns=:metadata.name --no-headers)
+echo "Fetching logs for pod: $ES_POD"
+kubectl logs $ES_POD -n big-data-pipeline
+
+# 5. After running the commands above, try accessing the Streamlit dashboard again.
+# If the issue is resolved, the error should be gone.

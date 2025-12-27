@@ -63,9 +63,14 @@ services:
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
       - xpack.security.enabled=false
       - xpack.security.http.ssl.enabled=false
+      - bootstrap.memory_lock=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     ports:
       - "9200:9200"
       - "9300:9300"
@@ -73,6 +78,12 @@ services:
       - bigdata-network
     volumes:
       - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status.*\\(green\\|yellow\\)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.4.3
@@ -95,7 +106,7 @@ services:
       - kafka
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: data-stream
+      KAFKA_TOPIC: football-stream
       BATCH_SIZE: 500
       SLEEP_TIME: 0.3
       CSV_FILE_PATH: /app/full_dataset.csv
@@ -104,7 +115,7 @@ services:
       - ./archive/full_dataset.csv:/app/full_dataset.csv:ro
     networks:
       - bigdata-network
-    restart: unless-stopped
+    restart: always
 
   spark-streaming:
     build:
@@ -112,12 +123,15 @@ services:
       dockerfile: Dockerfile
     container_name: spark-streaming
     depends_on:
-      - kafka
-      - elasticsearch
-      - cassandra
+      kafka:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: data-stream
+      KAFKA_TOPIC: football-stream
       ELASTICSEARCH_NODES: elasticsearch
       ELASTICSEARCH_INDEX: football-matches
       ELASTICSEARCH_AGG_INDEX: events-aggregated

@@ -114,18 +114,18 @@ spec:
             - name: discovery.type
               value: "single-node"
             - name: ES_JAVA_OPTS
-              # Tăng lên 512m để không bị treo, 192m là quá ít cho bản 8.4
-              value: "-Xms512m -Xmx512m" 
+              # Tăng lên 1g để không bị treo
+              value: "-Xms1g -Xmx1g" 
             - name: xpack.security.enabled
               value: "false"
             - name: xpack.security.http.ssl.enabled
               value: "false"
           resources:
             requests:
-              memory: "1Gi"   # Request 1Gi để đảm bảo Node có đủ chỗ
+              memory: "1.5Gi"   # Request 1.5Gi để đảm bảo Node có đủ chỗ
               cpu: "200m"
             limits:
-              memory: "1.5Gi" # Cho phép dùng tối đa 1.5Gi để tránh OOMKilled
+              memory: "2Gi" # Cho phép dùng tối đa 2Gi để tránh OOMKilled
               cpu: "1000m"
           volumeMounts:
             - name: elasticsearch-data

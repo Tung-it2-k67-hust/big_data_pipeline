@@ -10,6 +10,10 @@ from elasticsearch import Elasticsearch
 from datetime import datetime, timedelta
 import time
 import os
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
 
 # Page configuration
 st.set_page_config(
@@ -21,34 +25,57 @@ st.set_page_config(
 # Connect to Elasticsearch
 @st.cache_resource
 def get_es_connection():
-    """Create Elasticsearch connection"""
+    """Create Elasticsearch connection with retry logic"""
     es_host = os.getenv('ELASTICSEARCH_HOST', 'elasticsearch')
     es_port = int(os.getenv('ELASTICSEARCH_PORT', '9200'))
-    # Increase timeout to 60s to handle large data fetches
-    return Elasticsearch([{'host': es_host, 'port': es_port, 'scheme': 'http'}], request_timeout=60)
+    
+    # Elasticsearch 8.x client configuration
+    es = Elasticsearch(
+        f"http://{es_host}:{es_port}",
+        request_timeout=30,
+        max_retries=10,
+        retry_on_timeout=True
+    )
+    
+    # Retry connecting up to 10 times with wait time
+    max_attempts = 10
+    for i in range(max_attempts):
+        try:
+            if es.ping():
+                return es
+            else:
+                st.warning(f"Elasticsearch ping failed (Attempt {i+1}/{max_attempts}). Service might be starting...")
+        except Exception as e:
+            st.warning(f"Connecting to Elasticsearch... (Attempt {i+1}/{max_attempts}). Error: {str(e)}")
+        
+        time.sleep(10) # Wait 10 seconds before retrying
+            
+    st.error("Failed to connect to Elasticsearch after multiple attempts. Please check if the service is running and accessible.")
+    return None
 
-def fetch_data(es, index='football-matches', max_size=1000):
+def fetch_data(es, index='football-matches', max_size=10000):
     """
     Fetch data from Elasticsearch
-    Reduced default max_size to 1000 to avoid timeouts with 4M+ documents.
+    Increased max_size to 10000 to show more records.
     """
     try:
         # First, get the total count with timeout
-        count_response = es.count(index=index, body={"query": {"match_all": {}}}, request_timeout=30)
+        # Updated for Elasticsearch 8.x client (query instead of body)
+        count_response = es.count(index=index, query={"match_all": {}})
         total_docs = count_response['count']
         
         # Fetch up to max_size
         fetch_size = min(total_docs, max_size)
         
-        query = {
-            "size": fetch_size,
-            "sort": [{"match_date": {"order": "desc"}}],
-            "query": {
-                "match_all": {}
-            }
-        }
+        # Updated for Elasticsearch 8.x client
+        response = es.search(
+            index=index, 
+            query={"match_all": {}},
+            sort=[{"date": {"order": "desc"}}],
+            size=fetch_size,
+            request_timeout=60
+        )
         
-        response = es.search(index=index, body=query, request_timeout=60)
         hits = response['hits']['hits']
         data = [hit['_source'] for hit in hits]
         df = pd.DataFrame(data)
@@ -72,8 +99,17 @@ def main():
     auto_refresh = st.sidebar.checkbox("Auto Refresh", value=False)
     refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 30)
     
+    if auto_refresh and st_autorefresh:
+        st_autorefresh(interval=refresh_interval * 1000, key="data_refresh")
+    elif auto_refresh and st_autorefresh is None:
+        st.warning("streamlit-autorefresh not installed. Falling back to manual refresh.")
+
     # Connect to Elasticsearch
     es = get_es_connection()
+    
+    # Stop execution if connection failed
+    if es is None:
+        st.stop()
     
     # Fetch data
     with st.spinner('Fetching data from Elasticsearch...'):
@@ -81,18 +117,14 @@ def main():
     
     if df.empty:
         st.warning("No data available. Make sure the pipeline is running and data is being ingested.")
-        if auto_refresh:
-            time.sleep(refresh_interval)
-            st.rerun()
+        # Removed blocking sleep
         return
 
-    # Ensure date column is datetime
-    if 'match_date' in df.columns:
-        df['match_date'] = pd.to_datetime(df['match_date'])
-    elif 'Date' in df.columns:
-        df['match_date'] = pd.to_datetime(df['Date'], errors='coerce')
-
-    # Ensure numeric columns exist (fill with 0 if missing)
+    # Ensure date column is datetime (keep original 'date' field in format yyyy-mm-dd)
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    
+    # Check if columns exist (fill with 0 if missing)
     # Added: hc, ac (corners), hr, ar (red cards), psh, psd, psa (odds)
     numeric_cols = [
         'hs', 'as', 'hst', 'ast', 'fthg', 'ftag', 
@@ -132,13 +164,13 @@ def main():
     # --- TAB 2: ATTACK STATS ---
     with tab2:
         st.subheader("Daily Shots Activity")
-        if 'match_date' in df.columns:
-            daily_shots = df.groupby('match_date')[['hs', 'as', 'hst', 'ast']].sum().reset_index()
+        if 'date' in df.columns:
+            daily_shots = df.groupby('date')[['hs', 'as', 'hst', 'ast']].sum().reset_index()
             fig_shots = go.Figure()
-            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['hs'], mode='lines', name='Home Shots'))
-            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['as'], mode='lines', name='Away Shots'))
-            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['hst'], mode='lines', name='Home On Target', line=dict(dash='dot')))
-            fig_shots.add_trace(go.Scatter(x=daily_shots['match_date'], y=daily_shots['ast'], mode='lines', name='Away On Target', line=dict(dash='dot')))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['date'], y=daily_shots['hs'], mode='lines', name='Home Shots'))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['date'], y=daily_shots['as'], mode='lines', name='Away Shots'))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['date'], y=daily_shots['hst'], mode='lines', name='Home On Target', line=dict(dash='dot')))
+            fig_shots.add_trace(go.Scatter(x=daily_shots['date'], y=daily_shots['ast'], mode='lines', name='Away On Target', line=dict(dash='dot')))
             fig_shots.update_layout(xaxis_title='Date', yaxis_title='Count', hovermode="x unified")
             st.plotly_chart(fig_shots, use_container_width=True)
 
@@ -191,17 +223,17 @@ def main():
         st.subheader("Betting Odds Trends (Pinnacle)")
         st.markdown("Average daily odds for Home Win (PSH), Draw (PSD), and Away Win (PSA).")
         
-        if 'psh' in df.columns and 'match_date' in df.columns:
+        if 'psh' in df.columns and 'date' in df.columns:
             # Filter out 0 values which might be missing data
             odds_df = df[(df['psh'] > 0) & (df['psd'] > 0) & (df['psa'] > 0)]
             
             if not odds_df.empty:
-                daily_odds = odds_df.groupby('match_date')[['psh', 'psd', 'psa']].mean().reset_index()
+                daily_odds = odds_df.groupby('date')[['psh', 'psd', 'psa']].mean().reset_index()
                 
                 fig_odds = go.Figure()
-                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psh'], name='Home Win Odds (PSH)'))
-                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psd'], name='Draw Odds (PSD)'))
-                fig_odds.add_trace(go.Scatter(x=daily_odds['match_date'], y=daily_odds['psa'], name='Away Win Odds (PSA)'))
+                fig_odds.add_trace(go.Scatter(x=daily_odds['date'], y=daily_odds['psh'], name='Home Win Odds (PSH)'))
+                fig_odds.add_trace(go.Scatter(x=daily_odds['date'], y=daily_odds['psd'], name='Draw Odds (PSD)'))
+                fig_odds.add_trace(go.Scatter(x=daily_odds['date'], y=daily_odds['psa'], name='Away Win Odds (PSA)'))
                 
                 fig_odds.update_layout(xaxis_title='Date', yaxis_title='Average Odds', hovermode="x unified")
                 st.plotly_chart(fig_odds, use_container_width=True)

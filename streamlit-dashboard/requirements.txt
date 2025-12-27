@@ -1,4 +1,5 @@
 streamlit==1.28.0
 pandas==2.0.3
 plotly==5.17.0
-elasticsearch==7.17.9
+elasticsearch>=8.0.0,<9.0.0
+streamlit-autorefresh
