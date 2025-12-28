@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bigdata-ingress
+  namespace: big-data-pipeline
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /streamlit(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: streamlit
+            port:
+              number: 8501
+
+      - path: /grafana(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+
+      - path: /kibana(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: kibana
+            port:
+              number: 5601
+
+      - path: /prometheus(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+
+      - path: /spark(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: spark-streaming
+            port:
+              number: 4040

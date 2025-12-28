@@ -18,6 +18,9 @@ spec:
         - name: spark-streaming
           image: asia-northeast1-docker.pkg.dev/robust-magpie-479807-f1/my-repo/spark-streaming:latest
           imagePullPolicy: Always
+          ports:
+            - containerPort: 4040
+              name: spark-ui
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka:9092"

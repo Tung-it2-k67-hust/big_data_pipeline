@@ -14,15 +14,6 @@ spec:
       labels:
         app: kafka-producer
     spec:
-      initContainers:
-        - name: download-csv
-          image: google/cloud-sdk:alpine
-          command: ["/bin/sh", "-c"]
-          args:
-            - gsutil cp gs://gcp-data-pipeline-files-tung/data/full_dataset.csv /data/full_dataset.csv
-          volumeMounts:
-            - name: csv-data
-              mountPath: /data
       containers:
         - name: kafka-producer
           image: asia-northeast1-docker.pkg.dev/robust-magpie-479807-f1/my-repo/kafka-producer:latest
@@ -40,10 +31,6 @@ spec:
               value: "/app/data/full_dataset.csv"
             - name: PRODUCER_LOOP
               value: "false"
-          volumeMounts:
-            - name: csv-data
-              mountPath: /app/data
-              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -51,17 +38,5 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-      volumes:
-        - name: csv-data
-          emptyDir: {}
 ---
-# ConfigMap for CSV file (for small files)
-# For large files, consider using PersistentVolume or initContainer
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: football-csv-data
-  namespace: big-data-pipeline
-# Note: For large CSV files, you may need to use a different approach
-# such as mounting from PersistentVolume or using an initContainer
-# to download the file from a storage service
+

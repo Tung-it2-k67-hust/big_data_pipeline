@@ -16,6 +16,8 @@ COPY . /app
 RUN mkdir -p /home/spark/.ivy2/cache && \
     chmod -R 777 /home/spark/.ivy2
 
+EXPOSE 4040
+
 USER spark
 
 # Câu lệnh chạy Spark Streaming (Đã sửa tên file script thành src/streaming_app.py)

@@ -42,6 +42,7 @@ def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
         .config("spark.driver.bindAddress", "0.0.0.0") \
         .config("spark.ui.port", "4040") \
         .config("spark.kafka.consumer.cache.enabled", "false") \
+        .config("spark.scheduler.mode", "FAIR") \
         .getOrCreate()
 
     spark.sparkContext.setLogLevel("WARN")
@@ -189,6 +190,8 @@ def write_to_elasticsearch(df, index_name):
 def main():
     try:
         spark = create_spark_session()
+        # Set to use UninterruptibleThread to avoid KAFKA-1894 warning
+        spark.sparkContext.setLocalProperty("spark.scheduler.pool", "uninterruptible")
         schema = define_schema()
 
         # Lấy cấu hình từ env để khớp với file 06-spark-streaming.yaml
