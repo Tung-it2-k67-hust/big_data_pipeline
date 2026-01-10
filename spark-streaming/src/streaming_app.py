@@ -1,9 +1,13 @@
+"""
+Ứng dụng Spark Streaming xử lý dữ liệu bóng đá thời gian thực
+Đọc từ Kafka -> Xử lý -> Ghi xuống Cassandra và Elasticsearch
+"""
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, expr, when, lit, count,
     sum as spark_sum, avg,
     current_timestamp, to_date, to_timestamp, from_json,
-    md5, concat_ws, udf, from_utc_timestamp, coalesce  # <-- Thêm hàm này
+    md5, concat_ws, udf, from_utc_timestamp, coalesce
 )
 from pyspark.sql.types import (
     StructType, StructField,
@@ -15,24 +19,29 @@ import uuid
 import time
 
 # --------------------------------------------------
-# Logging
+# Cấu hình Logging
 # --------------------------------------------------
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+# Thêm FileHandler để ghi log ra file
+file_handler = logging.FileHandler('/tmp/spark_app.log')
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 # --------------------------------------------------
-# Spark Session
+# Khởi tạo Spark Session
 # --------------------------------------------------
 def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
-    # Sử dụng ELASTICSEARCH_NODES để khớp với file YAML Deployment của bạn
+    """
+    Tạo và cấu hình Spark Session với các connector cần thiết
+    """
+    # Lấy danh sách node Elasticsearch từ biến môi trường
     es_nodes = os.getenv("ELASTICSEARCH_NODES", "elasticsearch")
     
     spark = SparkSession.builder \
         .appName(app_name) \
-        .config("spark.jars.packages", 
-                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.3,"
-                "com.datastax.spark:spark-cassandra-connector_2.12:3.3.0,"
-                "org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0") \
         .config("spark.sql.shuffle.partitions", "4") \
         .config("spark.es.nodes", es_nodes) \
         .config("spark.es.port", "9200") \
@@ -46,58 +55,62 @@ def create_spark_session(app_name="FootballStreamingToCassandraAndES"):
         .getOrCreate()
 
     spark.sparkContext.setLogLevel("WARN")
-    logger.info(f"Spark session created. Connecting to ES nodes: {es_nodes}")
+    logger.info(f"Spark session đã được tạo. Kết nối đến ES nodes: {es_nodes}")
     return spark
 
 # --------------------------------------------------
-# Schema
+# Định nghĩa Schema
 # --------------------------------------------------
 def define_schema():
+    """
+    Định nghĩa cấu trúc dữ liệu (Schema) cho dữ liệu trận đấu
+    """
     return StructType([
-        StructField("Season", StringType()),
-        StructField("Div", StringType()),
-        StructField("Date", StringType()),
-        StructField("HomeTeam", StringType()),
-        StructField("AwayTeam", StringType()),
-        StructField("FTHG", IntegerType()),
-        StructField("FTAG", IntegerType()),
-        StructField("FTR", StringType()),
-        StructField("HTHG", IntegerType()),
-        StructField("HTAG", IntegerType()),
-        StructField("HTR", StringType()),
-        StructField("HS", IntegerType()),
-        StructField("AS", IntegerType()),
-        StructField("HST", IntegerType()),
-        StructField("AST", IntegerType()),
-        StructField("HF", IntegerType()),
-        StructField("AF", IntegerType()),
-        StructField("HC", IntegerType()),
-        StructField("AC", IntegerType()),
-        StructField("HY", IntegerType()),
-        StructField("AY", IntegerType()),
-        StructField("HR", IntegerType()),
-        StructField("AR", IntegerType()),
-        StructField("PSH", DoubleType()),
-        StructField("PSD", DoubleType()),
-        StructField("PSA", DoubleType())
+        StructField("Season", StringType()),      # Mùa giải
+        StructField("Div", StringType()),         # Hạng đấu
+        StructField("Date", StringType()),        # Ngày thi đấu
+        StructField("HomeTeam", StringType()),    # Đội nhà
+        StructField("AwayTeam", StringType()),    # Đội khách
+        StructField("FTHG", IntegerType()),       # Bàn thắng đội nhà (Full Time)
+        StructField("FTAG", IntegerType()),       # Bàn thắng đội khách (Full Time)
+        StructField("FTR", StringType()),         # Kết quả (H=Home Win, A=Away Win, D=Draw)
+        StructField("HTHG", IntegerType()),       # Bàn thắng đội nhà (Half Time)
+        StructField("HTAG", IntegerType()),       # Bàn thắng đội khách (Half Time)
+        StructField("HTR", StringType()),         # Kết quả hiệp 1
+        StructField("HS", IntegerType()),         # Cú sút đội nhà
+        StructField("AS", IntegerType()),         # Cú sút đội khách
+        StructField("HST", IntegerType()),        # Cú sút trúng đích đội nhà
+        StructField("AST", IntegerType()),        # Cú sút trúng đích đội khách
+        StructField("HF", IntegerType()),         # Phạm lỗi đội nhà
+        StructField("AF", IntegerType()),         # Phạm lỗi đội khách
+        StructField("HC", IntegerType()),         # Phạt góc đội nhà
+        StructField("AC", IntegerType()),         # Phạt góc đội khách
+        StructField("HY", IntegerType()),         # Thẻ vàng đội nhà
+        StructField("AY", IntegerType()),         # Thẻ vàng đội khách
+        StructField("HR", IntegerType()),         # Thẻ đỏ đội nhà
+        StructField("AR", IntegerType()),         # Thẻ đỏ đội khách
+        StructField("PSH", DoubleType()),         # Tỷ lệ cược đội nhà thắng
+        StructField("PSD", DoubleType()),         # Tỷ lệ cược hòa
+        StructField("PSA", DoubleType())          # Tỷ lệ cược đội khách thắng
     ])
 
 # --------------------------------------------------
-# Helper Functions
+# Hàm hỗ trợ (Helper Functions)
 # --------------------------------------------------
 def format_uuid_string(uuid_str):
+    """Định dạng chuỗi UUID cho đúng chuẩn"""
     if uuid_str and len(uuid_str) == 32:
         try:
-            # Thư viện uuid của Python sẽ tự động thêm gạch ngang khi in ra str()
             return str(uuid.UUID(uuid_str)) 
         except ValueError:
             return None
-    return uuid_str # Trả về nguyên gốc nếu đã có format đúng hoặc null
+    return uuid_str
 
 # --------------------------------------------------
-# Kafka Source
+# Nguồn dữ liệu Kafka
 # --------------------------------------------------
 def read_from_kafka(spark, servers, topic):
+    """Đọc luồng dữ liệu từ Kafka"""
     return spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", servers) \
@@ -109,16 +122,23 @@ def read_from_kafka(spark, servers, topic):
         .load()
 
 # --------------------------------------------------
-# Process Stream
+# Xử lý luồng dữ liệu (Process Stream)
 # --------------------------------------------------
 def process_stream(df, schema):
-    # 1. Parse JSON từ Kafka
+    """
+    Xử lý dữ liệu thô từ Kafka:
+    1. Parse JSON
+    2. Tính toán thêm các chỉ số
+    3. Chuẩn hóa tên cột
+    4. Tạo ID duy nhất cho mỗi trận đấu
+    """
+    # 1. Parse JSON từ Kafka value
     json_df = df.selectExpr("CAST(value AS STRING) as json_payload")
     parsed = json_df.select(
         from_json(col("json_payload"), schema).alias("data")
     ).select("data.*")
 
-    # 2. Thêm các cột tính toán (DÙNG NGOẶC ĐƠN ĐỂ BAO QUANH)
+    # 2. Thêm các cột tính toán
     processed = (parsed
         .withColumn("processing_ts", from_utc_timestamp(current_timestamp(), "Asia/Ho_Chi_Minh"))
         .withColumn("totalgoals", col("FTHG") + col("FTAG"))
@@ -127,10 +147,10 @@ def process_stream(df, schema):
         .withColumn("drawflag", when(col("FTR") == "D", 1).otherwise(0))
     )
 
-    # 3. Chuyển tên cột thành chữ thường
+    # 3. Chuyển tên cột thành chữ thường để tương thích tốt hơn với các DB
     final_df = processed.toDF(*[c.lower() for c in processed.columns])
     
-    # 4. Tạo match_id
+    # 4. Tạo match_id duy nhất dựa trên thông tin trận đấu
     final_df = final_df.withColumn("match_id", 
         md5(concat_ws("-", col("season"), col("hometeam"), col("awayteam"), col("date"))))
 
@@ -141,12 +161,12 @@ def process_stream(df, schema):
     return final_df
 
 # --------------------------------------------------
-# Writers
+# Ghi dữ liệu (Writers)
 # --------------------------------------------------
 def write_to_cassandra(df, keyspace, table):
+    """Ghi dữ liệu vào Cassandra"""
     def write_batch(batch_df, batch_id):
         # Chọn đúng các cột có trong bảng Cassandra
-        # Convert Date string to proper date format for Cassandra
         cassandra_df = batch_df.select(
             col("season"), col("div"), 
             to_date(col("date"), "yyyy-MM-dd").alias("date"), 
@@ -160,8 +180,7 @@ def write_to_cassandra(df, keyspace, table):
             col("match_id")
         )
 
-        # --- FIX: Filter null dates to prevent Cassandra write failure ---
-        # Cassandra Primary Key columns cannot be null
+        # Lọc bỏ các bản ghi có ngày null (Cassandra Primary Key không được null)
         cassandra_df = cassandra_df.filter(col("date").isNotNull())
         
         cassandra_df.write \
@@ -172,12 +191,12 @@ def write_to_cassandra(df, keyspace, table):
             .option("spark.cassandra.connection.host", os.getenv("CASSANDRA_HOST", "cassandra")) \
             .save()
             
-    # Thêm query name để dễ quản lý trong Spark UI
     return df.writeStream.queryName(f"Writer_{table}") \
              .option("checkpointLocation", f"/tmp/checkpoint/cassandra_{table}") \
              .foreachBatch(write_batch).outputMode("append").start()
 
 def write_to_elasticsearch(df, index_name):
+    """Ghi dữ liệu vào Elasticsearch"""
     return df.writeStream \
         .format("es") \
         .queryName(f"Writer_{index_name}") \
@@ -185,36 +204,53 @@ def write_to_elasticsearch(df, index_name):
         .start(index_name)
 
 # --------------------------------------------------
-# Main
+# Hàm chính (Main)
 # --------------------------------------------------
 def main():
+    logger.info("Application starting...")
     try:
+        logger.info("Creating Spark session...")
         spark = create_spark_session()
-        # Set to use UninterruptibleThread to avoid KAFKA-1894 warning
+        logger.info("Spark session created successfully.")
+
+        # Cấu hình scheduler pool để tránh cảnh báo KAFKA-1894
         spark.sparkContext.setLocalProperty("spark.scheduler.pool", "uninterruptible")
+        logger.info("Scheduler pool set to 'uninterruptible'.")
+
         schema = define_schema()
 
-        # Lấy cấu hình từ env để khớp với file 06-spark-streaming.yaml
+        # Lấy cấu hình từ biến môi trường
         kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-        # Đảm bảo topic khớp với Producer (football-stream)
         kafka_topic = os.getenv("KAFKA_TOPIC", "football-stream")
-        # Đảm bảo index khớp với Dashboard (football-matches)
         es_index = os.getenv("ELASTICSEARCH_INDEX", "football-matches")
+        cassandra_keyspace = os.getenv("CASSANDRA_KEYSPACE", "football_stats")
 
-        logger.info(f"Starting stream from {kafka_bootstrap} topic {kafka_topic}")
-
+        logger.info(f"Bắt đầu stream từ {kafka_bootstrap}, topic: {kafka_topic}")
+        
+        logger.info("Reading from Kafka...")
         kafka_df = read_from_kafka(spark, kafka_bootstrap, kafka_topic)
+        logger.info("Kafka stream read successfully.")
+
+        logger.info("Processing stream...")
         processed = process_stream(kafka_df, schema)
+        logger.info("Stream processing defined.")
 
-        # Ghi song song
-        q1 = write_to_cassandra(processed, "football_stats", "matches")
+        # Ghi song song xuống Cassandra và Elasticsearch
+        logger.info("Starting Cassandra write stream...")
+        q1 = write_to_cassandra(processed, cassandra_keyspace, "matches")
+        logger.info("Cassandra write stream started.")
+
+        logger.info("Starting Elasticsearch write stream...")
         q_es = write_to_elasticsearch(processed, es_index)
+        logger.info("Elasticsearch write stream started.")
 
+        logger.info("Awaiting termination of any stream...")
         spark.streams.awaitAnyTermination()
+        logger.info("Stream terminated.")
     except Exception as e:
-        logger.error("❌ CRITICAL ERROR: Spark App Crashed!")
+        logger.error("❌ LỖI NGHIÊM TRỌNG: Ứng dụng Spark bị dừng đột ngột!")
         logger.error(str(e))
-        # Giữ container sống để xem log và UI (nếu UI đã lên)
+        # Giữ container sống để debug
         while True:
             time.sleep(60)
 

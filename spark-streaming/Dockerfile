@@ -9,7 +9,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy toàn bộ source code
 COPY . /app
 
 # Tạo thư mục cache và cấp quyền (Đoạn bạn vừa yêu cầu thêm)
@@ -24,4 +23,5 @@ USER spark
 CMD ["/opt/spark/bin/spark-submit", \
      "--master", "local[*]", \
      "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.3,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0,org.elasticsearch:elasticsearch-spark-30_2.12:8.11.0", \
+     "--conf", "spark.scheduler.pool=uninterruptible", \
      "src/streaming_app.py"]

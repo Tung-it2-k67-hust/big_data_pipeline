@@ -301,6 +301,57 @@ streamlit run app.py
 - **Spark**: Adjust resources and replicas in `k8s/06-spark-streaming.yaml`
 - **Elasticsearch**: Scale nodes in `k8s/03-elasticsearch.yaml`
 
+## 🖥️ Local Development
+
+For local development and testing, you can run the entire pipeline using Docker Compose.
+
+**Note**: The configuration is set to **reset data on every restart**. All data (Kafka messages, Elasticsearch indices, Cassandra tables) is stored in temporary containers and will be lost when you stop the services.
+
+### Prerequisites
+
+- Docker Desktop installed and running
+- At least 8GB RAM (16GB recommended)
+- Git
+
+### Quick Start
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Tung-it2-k67-hust/big_data_pipeline.git
+   cd big_data_pipeline
+   ```
+
+2. **Start all services**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+3. **Wait for services to be healthy** (may take 5-10 minutes).
+
+4. **Access the applications**:
+
+   | Service | URL | Description |
+   |---------|-----|-------------|
+   | Streamlit Dashboard | http://localhost:8501 | Real-time analytics dashboard |
+   | Kibana | http://localhost:5601 | Data visualization |
+   | Kafka UI | http://localhost:8080 | Kafka cluster management |
+   | Grafana | http://localhost:3000 | Monitoring dashboard (user/pass: admin/admin) |
+
+### Resetting Data
+
+To completely reset the system and start fresh:
+
+1. Stop and remove containers:
+   ```bash
+   docker-compose down
+   ```
+2. Start again:
+   ```bash
+   docker-compose up -d
+   ```
+
+Since persistent volumes are disabled, this guarantees a clean state.
+
 ## 🤝 Contributing
 
 1. Fork the repository

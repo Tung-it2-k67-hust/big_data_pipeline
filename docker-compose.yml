@@ -1,4 +1,26 @@
+version: '3.8'
+
+# =============================================================================
+# CẤU HÌNH CHUNG (COMMON CONFIGURATION)
+# =============================================================================
+# Định nghĩa các cấu hình dùng chung để tái sử dụng, giúp file gọn gàng hơn.
+
+x-common-network: &common-network
+  networks:
+    - bigdata-network
+
+x-common-logging: &common-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
+  # ===========================================================================
+  # INFRASTRUCTURE SERVICES (Cơ sở hạ tầng: Zookeeper, Kafka, DBs)
+  # ===========================================================================
+
+  # Zookeeper: Dịch vụ điều phối và quản lý metadata cho Kafka cluster.
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
@@ -9,28 +31,52 @@ services:
       - "2181:2181"
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Kafka: Message Broker trung tâm, nơi nhận và phân phối dữ liệu streaming.
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
-      - "29092:29092"
+      - "9092:9092"   # Cổng nội bộ (Internal)
+      - "29092:29092" # Cổng truy cập từ máy host (External)
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Cấu hình listeners:
+      # - INTERNAL: Giao tiếp giữa các container trong mạng Docker (dùng kafka:9092)
+      # - EXTERNAL: Giao tiếp từ máy host vào container (dùng localhost:29092)
       KAFKA_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://0.0.0.0:29092 
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092 # Địa chỉ này cần đúng
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     networks:
       - bigdata-network
-      
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Cassandra: NoSQL Database lưu trữ dữ liệu đã qua xử lý (processed data).
   cassandra:
     image: cassandra:4.1
     container_name: cassandra
@@ -41,13 +87,10 @@ services:
       - CASSANDRA_DC=DC1
       - CASSANDRA_RACK=Rack1
     ports:
-      - "9042:9042"
-      - "7000:7000"
-      - "7199:7199"
-    networks:
-      - bigdata-network
+      - "9042:9042" # Native transport port
+      - "7000:7000" # Cluster communication
+      - "7199:7199" # JMX port
     volumes:
-      - cassandra-data:/var/lib/cassandra
       - ./cassandra/init.cql:/docker-entrypoint-initdb.d/init.cql
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
@@ -55,7 +98,19 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+    networks:
+      - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Elasticsearch: Search engine lưu trữ và đánh chỉ mục dữ liệu để tìm kiếm/visualize.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.4.3
     container_name: elasticsearch
@@ -70,51 +125,60 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "9200:9200"
-      - "9300:9300"
-    networks:
-      - bigdata-network
-    volumes:
-      - es-data:/usr/share/elasticsearch/data
+      - "9200:9200" # HTTP REST API
+      - "9300:9300" # Transport port
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status.*\\(green\\|yellow\\)'"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.4.3
-    container_name: kibana
-    depends_on:
-      - elasticsearch
-    environment:
-      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-    ports:
-      - "5601:5601"
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ===========================================================================
+  # APPLICATION SERVICES (Ứng dụng: Producer, Processing, Dashboard)
+  # ===========================================================================
+
+  # Kafka Producer: Đọc dữ liệu từ CSV và gửi vào Kafka topic.
   kafka-producer:
     build:
       context: ./kafka-producer
       dockerfile: Dockerfile
     container_name: kafka-producer
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+      # Lưu ý: Đã sửa từ địa chỉ K8s sang địa chỉ Docker Compose service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: football-stream
       BATCH_SIZE: 500
       SLEEP_TIME: 0.3
       CSV_FILE_PATH: /app/archive/full_dataset.csv
-      PRODUCER_LOOP: "false"
+      PRODUCER_LOOP: "true"
     volumes:
       - ./archive:/app/archive:ro
+    restart: always
     networks:
       - bigdata-network
-    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Spark Streaming: Ứng dụng xử lý dữ liệu thời gian thực (Real-time processing).
+  # Đọc từ Kafka -> Xử lý -> Ghi xuống Cassandra & Elasticsearch.
   spark-streaming:
     build:
       context: ./spark-streaming
@@ -122,32 +186,44 @@ services:
     container_name: spark-streaming
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
       elasticsearch:
         condition: service_healthy
       cassandra:
         condition: service_healthy
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+      # Lưu ý: Đã sửa từ địa chỉ K8s sang địa chỉ Docker Compose service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: football-stream
       ELASTICSEARCH_NODES: elasticsearch
       ELASTICSEARCH_INDEX: football-matches
       ELASTICSEARCH_AGG_INDEX: events-aggregated
       CASSANDRA_HOST: cassandra
       CASSANDRA_PORT: 9042
-      CASSANDRA_KEYSPACE: bigdata_pipeline
+      CASSANDRA_KEYSPACE: football_stats
     ports:
-      - "4040:4040"
+      - "4040:4040" # Spark UI
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Streamlit: Dashboard hiển thị dữ liệu trực quan cho người dùng cuối.
   streamlit:
     build:
       context: ./streamlit-dashboard
       dockerfile: Dockerfile
     container_name: streamlit
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     environment:
       ELASTICSEARCH_HOST: elasticsearch
       ELASTICSEARCH_PORT: 9200
@@ -155,7 +231,36 @@ services:
       - "8501:8501"
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ===========================================================================
+  # MONITORING & MANAGEMENT TOOLS (Công cụ quản lý và giám sát)
+  # ===========================================================================
+
+  # Kibana: Giao diện quản lý và trực quan hóa dữ liệu cho Elasticsearch.
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.4.3
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Kafka UI: Giao diện web để quản lý và theo dõi Kafka Cluster.
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -169,7 +274,13 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Prometheus: Hệ thống giám sát và cảnh báo (Monitoring).
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: prometheus
@@ -179,7 +290,13 @@ services:
       - "9090:9090"
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Grafana: Nền tảng phân tích và giám sát (Visualization).
   grafana:
     image: grafana/grafana:10.2.2
     container_name: grafana
@@ -190,13 +307,18 @@ services:
       - "3000:3000"
     networks:
       - bigdata-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =============================================================================
+# NETWORKS & VOLUMES
+# =============================================================================
 
 networks:
   bigdata-network:
     driver: bridge
 
-volumes:
-  es-data:
-    driver: local
-  cassandra-data:
-    driver: local
+
