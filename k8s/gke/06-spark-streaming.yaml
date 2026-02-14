@@ -1,0 +1,50 @@
+# Spark Streaming cho GKE
+# Spark Streaming xử lý dữ liệu real-time từ Kafka
+#
+# ⚠️ LƯU Ý: Thay YOUR_PROJECT_ID bằng GCP Project ID của bạn
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-streaming-config
+  namespace: big-data-pipeline
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_TOPIC: "data-stream"
+  ELASTICSEARCH_NODES: "elasticsearch"
+  ELASTICSEARCH_INDEX: "events"
+  ELASTICSEARCH_AGG_INDEX: "events-aggregated"
+  CASSANDRA_HOST: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local"
+  CASSANDRA_PORT: "9042"
+  CASSANDRA_KEYSPACE: "bigdata_pipeline"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-streaming
+  namespace: big-data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-streaming
+  template:
+    metadata:
+      labels:
+        app: spark-streaming
+    spec:
+      containers:
+        - name: spark-streaming
+          # Thay YOUR_PROJECT_ID bằng project ID của bạn
+          image: gcr.io/YOUR_PROJECT_ID/spark-streaming:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: spark-streaming-config
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"

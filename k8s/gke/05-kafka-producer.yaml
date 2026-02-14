@@ -1,0 +1,69 @@
+# Kafka Producer cho GKE
+# Kafka Producer sinh dữ liệu mẫu và gửi vào Kafka
+#
+# ⚠️ LƯU Ý: Thay YOUR_PROJECT_ID bằng GCP Project ID của bạn
+# Hoặc chạy script: ./scripts/gke-update-images.sh YOUR_PROJECT_ID
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-producer-config
+  namespace: big-data-pipeline
+data:
+  # Cấu hình Kafka Producer
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_TOPIC: "data-stream"
+  PRODUCER_INTERVAL: "1"
+  PRODUCER_LOOP: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-producer
+  namespace: big-data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-producer
+  template:
+    metadata:
+      labels:
+        app: kafka-producer
+    spec:
+      containers:
+        - name: kafka-producer
+          # Thay YOUR_PROJECT_ID bằng project ID của bạn
+          # Ví dụ: gcr.io/my-project-123/kafka-producer:latest
+          image: gcr.io/YOUR_PROJECT_ID/kafka-producer:latest
+          imagePullPolicy: Always
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-producer-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-producer-config
+                  key: KAFKA_TOPIC
+            - name: PRODUCER_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-producer-config
+                  key: PRODUCER_INTERVAL
+            - name: CSV_FILE_PATH
+              value: "/app/full_dataset.csv"
+            - name: PRODUCER_LOOP
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-producer-config
+                  key: PRODUCER_LOOP
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

@@ -1,0 +1,83 @@
+# Ingress cho GKE
+# Ingress cung cấp single entry point với routing dựa trên path/host
+#
+# Để sử dụng Ingress, bạn cần:
+# 1. Enable HTTP Load Balancing addon trên GKE cluster
+# 2. (Tùy chọn) Cấu hình domain name và SSL certificate
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bigdata-ingress
+  namespace: big-data-pipeline
+  annotations:
+    # Sử dụng GKE ingress controller
+    kubernetes.io/ingress.class: "gce"
+    # Tùy chọn: Redirect HTTP to HTTPS
+    # kubernetes.io/ingress.allow-http: "false"
+spec:
+  # Nếu bạn có domain name và SSL certificate
+  # tls:
+  #   - hosts:
+  #       - bigdata.example.com
+  #     secretName: bigdata-tls
+  rules:
+    # Rule cho Kibana
+    - host: kibana.bigdata.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601
+    # Rule cho Streamlit
+    - host: streamlit.bigdata.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: streamlit
+                port:
+                  number: 8501
+    # Rule cho Grafana
+    - host: grafana.bigdata.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+    # Rule cho Prometheus
+    - host: prometheus.bigdata.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus
+                port:
+                  number: 9090
+---
+# BackendConfig cho health checks (GKE specific)
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: bigdata-backend-config
+  namespace: big-data-pipeline
+spec:
+  healthCheck:
+    checkIntervalSec: 30
+    timeoutSec: 10
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /

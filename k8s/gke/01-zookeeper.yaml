@@ -1,0 +1,77 @@
+# Zookeeper cho GKE
+# Zookeeper là service quản lý và điều phối Kafka cluster
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: big-data-pipeline
+  labels:
+    app: zookeeper
+spec:
+  ports:
+    - port: 2181
+      name: client
+  selector:
+    app: zookeeper
+  clusterIP: None  # Headless service cho StatefulSet
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: big-data-pipeline
+spec:
+  serviceName: zookeeper
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:7.4.0
+          ports:
+            - containerPort: 2181
+              name: client
+          env:
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "2181"
+            - name: ZOOKEEPER_TICK_TIME
+              value: "2000"
+          # Resource requests/limits cho GKE
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          # Health checks
+          readinessProbe:
+            tcpSocket:
+              port: 2181
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 2181
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: zookeeper-data
+              mountPath: /var/lib/zookeeper
+  # PersistentVolumeClaim template cho GKE
+  volumeClaimTemplates:
+    - metadata:
+        name: zookeeper-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # GKE sẽ tự động sử dụng default StorageClass (standard hoặc standard-rwo)
+        resources:
+          requests:
+            storage: 10Gi

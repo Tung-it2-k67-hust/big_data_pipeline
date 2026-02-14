@@ -1,0 +1,256 @@
+# Cassandra cho GKE
+# Cassandra là NoSQL database cho time-series data
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cassandra-init-script
+  namespace: big-data-pipeline
+data:
+  init-schema.cql: |
+    -- Create keyspace for big data pipeline
+    CREATE KEYSPACE IF NOT EXISTS bigdata_pipeline
+    WITH replication = {
+        'class': 'SimpleStrategy',
+        'replication_factor': 1
+    };
+
+    USE bigdata_pipeline;
+
+    -- Table for raw events
+    CREATE TABLE IF NOT EXISTS events (
+        event_id UUID,
+        event_type TEXT,
+        user_id TEXT,
+        product_id TEXT,
+        price DECIMAL,
+        quantity INT,
+        region TEXT,
+        device TEXT,
+        timestamp TIMESTAMP,
+        PRIMARY KEY ((event_type, region), timestamp, event_id)
+    ) WITH CLUSTERING ORDER BY (timestamp DESC)
+    AND default_time_to_live = 2592000;
+
+    -- Table for aggregated metrics by region
+    CREATE TABLE IF NOT EXISTS metrics_by_region (
+        region TEXT,
+        window_start TIMESTAMP,
+        window_end TIMESTAMP,
+        event_type TEXT,
+        total_events BIGINT,
+        total_revenue DECIMAL,
+        avg_price DECIMAL,
+        PRIMARY KEY ((region), window_start, event_type)
+    ) WITH CLUSTERING ORDER BY (window_start DESC);
+
+    -- Table for aggregated metrics by device
+    CREATE TABLE IF NOT EXISTS metrics_by_device (
+        device TEXT,
+        window_start TIMESTAMP,
+        window_end TIMESTAMP,
+        event_type TEXT,
+        total_events BIGINT,
+        total_revenue DECIMAL,
+        avg_price DECIMAL,
+        PRIMARY KEY ((device), window_start, event_type)
+    ) WITH CLUSTERING ORDER BY (window_start DESC);
+
+    -- Table for product performance
+    CREATE TABLE IF NOT EXISTS product_metrics (
+        product_id TEXT,
+        date DATE,
+        total_views BIGINT,
+        total_clicks BIGINT,
+        total_purchases BIGINT,
+        total_revenue DECIMAL,
+        PRIMARY KEY ((product_id), date)
+    ) WITH CLUSTERING ORDER BY (date DESC);
+
+    -- Table for user activity
+    CREATE TABLE IF NOT EXISTS user_activity (
+        user_id TEXT,
+        date DATE,
+        total_events BIGINT,
+        total_purchases BIGINT,
+        total_spent DECIMAL,
+        PRIMARY KEY ((user_id), date)
+    ) WITH CLUSTERING ORDER BY (date DESC);
+---
+# Headless Service cho StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra
+  namespace: big-data-pipeline
+  labels:
+    app: cassandra
+spec:
+  ports:
+  - port: 9042
+    name: cql
+  - port: 7000
+    name: intra-node
+  - port: 7001
+    name: tls-intra-node
+  - port: 7199
+    name: jmx
+  clusterIP: None
+  selector:
+    app: cassandra
+---
+# External Service (LoadBalancer) cho truy cập từ bên ngoài
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra-external
+  namespace: big-data-pipeline
+  labels:
+    app: cassandra
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 9042
+    targetPort: 9042
+    name: cql
+  selector:
+    app: cassandra
+---
+# StatefulSet cho Cassandra
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cassandra
+  namespace: big-data-pipeline
+  labels:
+    app: cassandra
+spec:
+  serviceName: cassandra
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cassandra
+  template:
+    metadata:
+      labels:
+        app: cassandra
+    spec:
+      terminationGracePeriodSeconds: 1800
+      containers:
+      - name: cassandra
+        image: cassandra:4.1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 7000
+          name: intra-node
+        - containerPort: 7001
+          name: tls-intra-node
+        - containerPort: 7199
+          name: jmx
+        - containerPort: 9042
+          name: cql
+        resources:
+          limits:
+            cpu: "2000m"
+            memory: 4Gi
+          requests:
+            cpu: "1000m"
+            memory: 2Gi
+        securityContext:
+          capabilities:
+            add:
+              - IPC_LOCK
+        lifecycle:
+          preStop:
+            exec:
+              command: 
+              - /bin/sh
+              - -c
+              - nodetool drain
+        env:
+        - name: MAX_HEAP_SIZE
+          value: 1G
+        - name: HEAP_NEWSIZE
+          value: 256M
+        - name: CASSANDRA_SEEDS
+          value: "cassandra-0.cassandra.big-data-pipeline.svc.cluster.local"
+        - name: CASSANDRA_CLUSTER_NAME
+          value: "BigDataPipelineCluster"
+        - name: CASSANDRA_DC
+          value: "DC1-GKE"
+        - name: CASSANDRA_RACK
+          value: "Rack1-GKE"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              if [[ $(nodetool status | grep $POD_IP) == *"UN"* ]]; then
+                exit 0
+              else
+                exit 1
+              fi
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 9042
+          initialDelaySeconds: 90
+          periodSeconds: 30
+          timeoutSeconds: 10
+        volumeMounts:
+        - name: cassandra-data
+          mountPath: /var/lib/cassandra
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-script
+        configMap:
+          name: cassandra-init-script
+  volumeClaimTemplates:
+  - metadata:
+      name: cassandra-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+---
+# Job để khởi tạo schema sau khi Cassandra ready
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cassandra-schema-init
+  namespace: big-data-pipeline
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: schema-init
+        image: cassandra:4.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for Cassandra to be ready..."
+          until cqlsh cassandra-0.cassandra.big-data-pipeline.svc.cluster.local 9042 -e "describe cluster" > /dev/null 2>&1; do
+            echo "Cassandra is not ready yet. Retrying in 10 seconds..."
+            sleep 10
+          done
+          echo "Cassandra is ready. Initializing schema..."
+          cqlsh cassandra-0.cassandra.big-data-pipeline.svc.cluster.local 9042 -f /scripts/init-schema.cql
+          echo "Schema initialization completed."
+        volumeMounts:
+        - name: init-script
+          mountPath: /scripts
+      volumes:
+      - name: init-script
+        configMap:
+          name: cassandra-init-script
